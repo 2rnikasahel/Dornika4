@@ -8,7 +8,7 @@
 
 import { eq, asc } from "drizzle-orm";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { landingSlides, landingFeatures } from "@/db/schema";
 
 export interface LandingSlide {

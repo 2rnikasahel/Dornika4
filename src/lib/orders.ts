@@ -13,7 +13,7 @@
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   carts,
   cartItems,

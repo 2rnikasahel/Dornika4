@@ -23,7 +23,7 @@ import {
 import { cookies, headers } from "next/headers";
 import { eq, or } from "drizzle-orm";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { users } from "@/db";
 import {
   getCookieOptions,

@@ -28,7 +28,7 @@ import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
 import { eq, sql } from "drizzle-orm";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   carts,
   cartItems,

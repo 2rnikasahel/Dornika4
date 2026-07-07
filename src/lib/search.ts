@@ -5,7 +5,7 @@
 
 import { eq, and, or, ilike, asc, sql } from "drizzle-orm";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   products,
   productVariants,

@@ -10,7 +10,7 @@ import { eq, and, asc, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import ZAI from "z-ai-web-dev-sdk";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   chatSessions,
   chatMessages,

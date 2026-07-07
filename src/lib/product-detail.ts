@@ -7,7 +7,7 @@
 
 import { eq, and, asc, ne } from "drizzle-orm";
 
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   products,
   productVariants,
