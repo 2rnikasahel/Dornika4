@@ -26,7 +26,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { db } from "@/db";
 import {
   categories,
   products,
