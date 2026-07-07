@@ -1,0 +1,170 @@
+import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { desc } from "drizzle-orm";
+import ZAI from "z-ai-web-dev-sdk";
+
+import { db } from "@/db";
+import { products, productVariants, aiPriceUpdateJobs } from "@/db/schema";
+import { requireAdmin } from "@/lib/auth";
+import { adminGuard } from "@/lib/admin-guard";
+
+export const runtime = "nodejs";
+
+/**
+ * GET /api/admin/ai/pdf-import
+ * Admin-only. Returns the list of past AI price-update / import jobs
+ * (re-used as a generic "AI job" log). Useful for the admin panel's
+ * "drafts" list.
+ */
+export async function GET() {
+  return adminGuard(async () => {
+    await requireAdmin();
+    const items = (await db
+      .select()
+      .from(aiPriceUpdateJobs)
+      .orderBy(desc(aiPriceUpdateJobs.createdAt))
+      .limit(50)) as Array<(typeof aiPriceUpdateJobs.$inferSelect)>;
+    return NextResponse.json({ items });
+  }) as Promise<Response>;
+}
+
+/**
+ * POST /api/admin/ai/pdf-import
+ *
+ * Accepts a PDF file (multipart/form-data, field `file`) and uses the
+ * ZAI SDK to extract product information. The result is returned as a
+ * list of draft products that the admin can review + publish.
+ *
+ * Body params:
+ *   - file:      File (required, PDF)
+ *   - publish:   "1" to immediately create products (default: dry-run)
+ */
+export async function POST(req: Request) {
+  return adminGuard(async () => {
+    await requireAdmin();
+
+    const fd = await req.formData();
+    const file = fd.get("file") as File | null;
+    const publish = (fd.get("publish") as string | null) === "1";
+    if (!file || file.size === 0) {
+      return NextResponse.json({ error: "file required" }, { status: 400 });
+    }
+
+    // Read the PDF text. The ZAI SDK doesn't natively parse PDFs, so we
+    // extract text via a simple text-extraction heuristic: PDFs embed
+    // text in `BT ... ET` blocks; we read the bytes, look for ASCII
+    // runs, and join them.
+    const buf = Buffer.from(await file.arrayBuffer());
+    const text = extractPdfText(buf);
+    if (!text || text.length < 10) {
+      return NextResponse.json(
+        { error: "PDF text extraction failed" },
+        { status: 422 },
+      );
+    }
+
+    // Ask the ZAI model to extract product data as JSON.
+    let drafts: Array<{
+      title: string;
+      subtitle?: string;
+      description?: string;
+      sku?: string;
+      price?: number;
+      stock?: number;
+    }> = [];
+    try {
+      const zai = await ZAI.create();
+      const completion = (await zai.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content:
+              "تو یک دستیار استخراج محصول از کاتالوگ PDF هستی. لیست محصولات را به صورت آرایه JSON با کلیدهای title, subtitle, description, sku, price, stock برمی‌گردانی. فقط JSON خروجی بده — بدون توضیح اضافه.",
+          },
+          {
+            role: "user",
+            content: `متن کاتالوگ:\n\n${text.slice(0, 8000)}`,
+          },
+        ],
+      })) as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = completion?.choices?.[0]?.message?.content || "[]";
+      const jsonText = extractJson(raw);
+      drafts = JSON.parse(jsonText) as typeof drafts;
+      if (!Array.isArray(drafts)) drafts = [];
+    } catch (e) {
+      console.warn("[pdf-import] AI parse failed:", (e as Error).message);
+      drafts = [];
+    }
+
+    let created = 0;
+    if (publish) {
+      for (const d of drafts) {
+        if (!d.title) continue;
+        const id = `prod_${randomUUID().replace(/-/g, "")}`;
+        const slug = `${d.title.replace(/\s+/g, "-").toLowerCase()}-${id.slice(-4)}`;
+        await db.insert(products).values({
+          id,
+          slug,
+          title: d.title,
+          subtitle: d.subtitle ?? null,
+          description: d.description ?? null,
+          isActive: true,
+          status: "published",
+          sortOrder: 0,
+        });
+        if (d.sku || d.price != null) {
+          await db.insert(productVariants).values({
+            id: `pv_${randomUUID().replace(/-/g, "")}`,
+            productId: id,
+            sku: d.sku ?? null,
+            name: d.title,
+            price: String((d.price ?? 0).toFixed(2)),
+            stock: d.stock ?? 0,
+            isActive: true,
+            sortOrder: 0,
+          });
+        }
+        created++;
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      filename: file.name,
+      extractedTextLength: text.length,
+      drafts,
+      created,
+      published: publish,
+    });
+  }) as Promise<Response>;
+}
+
+/* ------------------------------------------------------------------ */
+/* PDF text extraction (very simple — works for unencrypted PDFs)      */
+/* ------------------------------------------------------------------ */
+
+function extractPdfText(buf: Buffer): string {
+  // Look for text inside parentheses in BT/ET blocks.
+  const text = buf.toString("latin1");
+  const matches: string[] = [];
+  const re = /\(([^()\\]{0,200})\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const t = m[1];
+    // Filter out non-printable / binary junk.
+    if (/[\x00-\x08\x0e-\x1f]/.test(t)) continue;
+    if (t.trim().length < 2) continue;
+    matches.push(t);
+  }
+  return matches.join(" ").slice(0, 16000);
+}
+
+function extractJson(text: string): string {
+  // Try to find the first `[...]` block.
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start >= 0 && end > start) {
+    return text.slice(start, end + 1);
+  }
+  return "[]";
+}
