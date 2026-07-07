@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-900: #05101d;
+  --color-navy-800: #0b2136;
+  --color-navy-700: #124e5c;
+  --color-navy-500: #1a3a5c;
+  --color-petrol-600: #237d90;
+  --color-petrol-500: #2d97ad;
+  --color-petrol-400: #3d9dae;
+  --color-petrol-300: #6cbccb;
+  --color-petrol-700: #196374;
+  --color-pearl-100: #f6f2e9;
+  --color-pearl-200: #ece5d5;
+  --color-pearl-300: #ddd2ba;
+  --color-pearl-50: #ffffff;
+  --color-charcoal-900: #0c0e12;
+  --color-charcoal-800: #262b36;
+  --color-charcoal-700: #3d4654;
+  --color-charcoal-500: #6b7280;
+  --color-charcoal-400: #9ca3af;
+  --color-charcoal-300: #d1d5db;
+  --shadow-glow-petrol: 0 8px 32px -8px rgba(35, 125, 144, 0.45);
+  --shadow-luxe: 0 20px 60px -20px rgba(5, 16, 29, 0.15);
+}
+
+@layer base {
+  body {
+    font-family: 'Vazirmatn Variable', system-ui, sans-serif;
+    background: var(--color-pearl-100);
+    color: var(--color-charcoal-900);
+  }
+}
+
+@layer utilities {
+  .text-gradient-navy {
+    background: linear-gradient(135deg, var(--color-navy-900), var(--color-navy-700));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .card {
+    background: white;
+    border-radius: 1.5rem;
+    border: 1px solid color-mix(in oklab, var(--color-navy-900) 8%, transparent);
+    box-shadow: 0 4px 24px -12px color-mix(in oklab, var(--color-navy-900) 12%, transparent);
+  }
+  .glass {
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+  }
+  .header-top, .header-scrolled {
+    background: linear-gradient(145deg, var(--color-navy-900), var(--color-charcoal-800));
+    border: 1px solid color-mix(in oklab, var(--color-pearl-100) 12%, transparent);
+  }
+  .header-top { box-shadow: 0 4px 20px -8px color-mix(in oklab, var(--color-navy-900) 30%, transparent); }
+  .header-scrolled { box-shadow: 0 12px 40px -10px color-mix(in oklab, var(--color-navy-900) 50%, transparent); }
+  .grid-dots-dark {
+    background-image: radial-gradient(circle, color-mix(in oklab, var(--color-navy-900) 8%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  @keyframes aurora { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,-20px) scale(1.05); } }
+  @keyframes float-slow { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-15px,15px); } }
+  .animate-aurora { animation: aurora 20s ease-in-out infinite; }
+  .animate-float-slow { animation: float-slow 15s ease-in-out infinite; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--color-navy-900) 15%, transparent); border-radius: 4px; }
