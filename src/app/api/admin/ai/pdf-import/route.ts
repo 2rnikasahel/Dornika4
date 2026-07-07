@@ -109,7 +109,7 @@ export async function POST(req: Request) {
           subtitle: d.subtitle ?? null,
           description: d.description ?? null,
           isActive: true,
-          status: "published",
+          status: "active",
           sortOrder: 0,
         });
         if (d.sku || d.price != null) {

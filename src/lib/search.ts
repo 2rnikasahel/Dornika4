@@ -59,7 +59,7 @@ export async function searchProducts(
 
   const conditions = [
     eq(products.isActive, true),
-    eq(products.status, "published"),
+    eq(products.status, "active"),
     categoryId ? eq(products.categoryId, categoryId) : undefined,
     q
       ? or(

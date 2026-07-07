@@ -7,9 +7,9 @@ import { eq } from "drizzle-orm";
 const db = await getDb();
 
 function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
-  return `${salt}:${hash}`;
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, "sha512");
+  return `pbkdf2$10000$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
 console.log("🌱 Seeding...");

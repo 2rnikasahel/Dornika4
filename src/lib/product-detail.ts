@@ -197,7 +197,7 @@ export async function getRelatedProducts(
       .where(
         and(
           eq(products.isActive, true),
-          eq(products.status, "published"),
+          eq(products.status, "active"),
           ne(products.id, productId),
           categoryId ? eq(products.categoryId, categoryId) : undefined,
         ),

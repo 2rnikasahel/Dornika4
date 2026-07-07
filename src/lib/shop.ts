@@ -214,7 +214,7 @@ export async function getShopProducts(
 
     const conditions: SQL[] = [
       eq(products.isActive, true),
-      eq(products.status, "published"),
+      eq(products.status, "active"),
       resolvedCategoryId ? eq(products.categoryId, resolvedCategoryId) : null,
       search
         ? or(
@@ -462,7 +462,7 @@ export async function getAllCategories(): Promise<CategoryNode[]> {
         c: count(),
       })
       .from(products)
-      .where(and(eq(products.isActive, true), eq(products.status, "published")))
+      .where(and(eq(products.isActive, true), eq(products.status, "active")))
       .groupBy(products.categoryId)) as Array<{
       categoryId: string | null;
       c: number;
