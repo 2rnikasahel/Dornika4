@@ -1,117 +1,19 @@
-/**
- * Cookie configuration for "درنیکا ساحل" (Dornika Sahel).
- *
- * The platform is served both from `localhost` (local dev) and from the
- * preview gateway (`space-z.ai`, `chatglm.cn`, HTTPS front-ends). Cookies
- * must be issued with the right `sameSite` / `secure` combination so
- * that auth sessions survive across the gateway hop.
- */
-
-/* ------------------------------------------------------------------ */
-/* Preview environment detection                                      */
-/* ------------------------------------------------------------------ */
-
-export interface CookieRequestLike {
-  headers?: {
-    get(name: string): string | null;
-  } | Headers;
-  url?: string;
-  hostname?: string;
+export function isPreviewEnvironment(req: Request): boolean {
+  const forwardedHost = req.headers.get("x-forwarded-host") || "";
+  const host = req.headers.get("host") || "";
+  const origin = req.headers.get("origin") || "";
+  const forwardedProto = req.headers.get("x-forwarded-proto") || "";
+  const previewPatterns = ["space-z.ai", "chatglm.cn", "preview"];
+  const allHeaders = `${forwardedHost} ${host} ${origin}`;
+  const isPreviewDomain = previewPatterns.some((p) => allHeaders.includes(p));
+  const isHttps = forwardedProto === "https" || origin.startsWith("https://");
+  return isPreviewDomain || isHttps;
 }
 
-const PREVIEW_HOST_FRAGMENTS = [
-  "space-z.ai",
-  "chatglm.cn",
-  "preview.app",
-  ".z.ai",
-];
-
-function readHeader(req: CookieRequestLike, name: string): string | null {
-  if (!req.headers) return null;
-  if (typeof (req.headers as Headers).get === "function") {
-    return (req.headers as Headers).get(name);
-  }
-  return (req.headers as { get(n: string): string | null }).get(name);
+export function getCookieOptions(maxAgeDays: number = 30) {
+  return { path: "/", maxAge: 60 * 60 * 24 * maxAgeDays, httpOnly: true, sameSite: "lax" as const, secure: false };
 }
 
-/**
- * Returns true when the request came through the preview gateway.
- *
- * Heuristics (any one of):
- *  - The `x-forwarded-host` / `host` header contains a known preview domain
- *  - The `x-forwarded-proto` header is `https`
- *  - The `forwarded` header sets `proto=https`
- *  - The request URL begins with `https://`
- */
-export function isPreviewEnvironment(req: CookieRequestLike): boolean {
-  const fwdHost =
-    readHeader(req, "x-forwarded-host") || readHeader(req, "host") || "";
-  const fwdProto = readHeader(req, "x-forwarded-proto") || "";
-  const forwarded = readHeader(req, "forwarded") || "";
-
-  const host =
-    req.hostname || (typeof fwdHost === "string" ? fwdHost.split(":")[0] : "");
-  const url = req.url || "";
-
-  if (fwdProto === "https") return true;
-  if (/proto=https/i.test(forwarded)) return true;
-  if (url.startsWith("https://")) return true;
-
-  for (const fragment of PREVIEW_HOST_FRAGMENTS) {
-    if (host && host.includes(fragment)) return true;
-    if (url && url.includes(fragment)) return true;
-  }
-
-  return false;
-}
-
-/* ------------------------------------------------------------------ */
-/* Cookie option builders                                             */
-/* ------------------------------------------------------------------ */
-
-export interface CookieOptions {
-  httpOnly: boolean;
-  secure: boolean;
-  sameSite: "lax" | "strict" | "none";
-  path: string;
-  maxAge?: number;
-}
-
-/**
- * Cookie options for localhost (or any non-HTTPS environment).
- * Uses `sameSite: lax` so dev-server redirects work.
- */
-export function getCookieOptions(): CookieOptions {
-  return {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    path: "/",
-  };
-}
-
-/**
- * Cookie options for the preview gateway.
- * `sameSite: none` + `secure: true` is required for the auth cookie to
- * be sent across the gateway's cross-site embedding.
- */
-export function getPreviewCookieOptions(): CookieOptions {
-  return {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    path: "/",
-  };
-}
-
-/**
- * Returns cookie options appropriate for the given request, automatically
- * picking the preview variant when needed.
- */
-export function resolveCookieOptions(
-  req: CookieRequestLike,
-): CookieOptions {
-  return isPreviewEnvironment(req)
-    ? getPreviewCookieOptions()
-    : getCookieOptions();
+export function getPreviewCookieOptions(maxAgeDays: number = 30) {
+  return { path: "/", maxAge: 60 * 60 * 24 * maxAgeDays, httpOnly: true, sameSite: "none" as const, secure: true };
 }

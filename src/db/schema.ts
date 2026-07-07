@@ -1,4 +1,5 @@
 import {
+  serial,
   pgTable,
   text,
   boolean,
@@ -6,7 +7,6 @@ import {
   decimal,
   timestamp,
   jsonb,
-  primaryKey,
   index,
   uniqueIndex,
   varchar,
@@ -18,6 +18,10 @@ import {
  *
  * The schema is shared between PostgreSQL (production) and PGlite (sandbox).
  * All tables use text primary keys (cuid-style) to keep IDs portable.
+ *
+ * Column names use camelCase in TypeScript and snake_case in SQL.
+ * Indexes are named explicitly so they match between the runtime DDL
+ * (see `src/db/index.ts` BOOTSTRAP_SQL) and Drizzle migrations.
  */
 
 /* ------------------------------------------------------------------ */
@@ -26,7 +30,7 @@ import {
 export const adminUsers = pgTable(
   "admin_users",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
@@ -52,7 +56,7 @@ export const adminUsers = pgTable(
 export const siteSettings = pgTable(
   "site_settings",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     key: text("key").notNull(),
     group: text("group").notNull().default("general"),
     locale: text("locale").notNull().default("fa"),
@@ -76,7 +80,7 @@ export const siteSettings = pgTable(
 export const colorPalettes = pgTable(
   "color_palettes",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     colors: jsonb("colors").notNull().default({} as Record<string, string>),
@@ -97,7 +101,7 @@ export const colorPalettes = pgTable(
 export const categories = pgTable(
   "categories",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     parentId: text("parent_id"),
     slug: text("slug").notNull(),
     title: text("title").notNull(),
@@ -121,7 +125,7 @@ export const categories = pgTable(
 export const units = pgTable(
   "units",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     nameEn: text("name_en"),
@@ -141,7 +145,7 @@ export const units = pgTable(
 export const products = pgTable(
   "products",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     categoryId: text("category_id"),
     slug: text("slug").notNull(),
     title: text("title").notNull(),
@@ -151,7 +155,7 @@ export const products = pgTable(
     coverImage: text("cover_image"),
     isActive: boolean("is_active").notNull().default(true),
     status: text("status", {
-      enum: ["draft", "published", "archived"],
+      enum: ["draft", "published", "archived", "active"],
     })
       .notNull()
       .default("draft"),
@@ -177,7 +181,7 @@ export const products = pgTable(
 export const productVariants = pgTable(
   "product_variants",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     productId: text("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
@@ -187,7 +191,9 @@ export const productVariants = pgTable(
     sku: text("sku"),
     name: text("name").notNull(),
     nameEn: text("name_en"),
-    price: decimal("price", { precision: 18, scale: 2 }).notNull().default("0"),
+    price: decimal("price", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
     unitValue: text("unit_value"),
     stock: integer("stock").notNull().default(0),
     specSheet: jsonb("spec_sheet").notNull().default(
@@ -211,7 +217,7 @@ export const productVariants = pgTable(
 export const carts = pgTable(
   "carts",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     sessionToken: text("session_token").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -228,7 +234,7 @@ export const carts = pgTable(
 export const cartItems = pgTable(
   "cart_items",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     cartId: text("cart_id")
       .notNull()
       .references(() => carts.id, { onDelete: "cascade" }),
@@ -259,7 +265,7 @@ export const cartItems = pgTable(
 export const wishlistItems = pgTable(
   "wishlist_items",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     sessionToken: text("session_token").notNull(),
     productId: text("product_id").references(() => products.id, {
       onDelete: "cascade",
@@ -278,38 +284,32 @@ export const wishlistItems = pgTable(
 /* ------------------------------------------------------------------ */
 /* Landing page content                                               */
 /* ------------------------------------------------------------------ */
-export const landingSlides = pgTable(
-  "landing_slides",
-  {
-    id: text("id").primaryKey(),
-    badge: text("badge"),
-    title: text("title").notNull(),
-    subtitle: text("subtitle"),
-    ctaText: text("cta_text"),
-    ctaHref: text("cta_href"),
-    cta2Text: text("cta2_text"),
-    cta2Href: text("cta2_href"),
-    accentColor: text("accent_color"),
-    image: text("image"),
-    isActive: boolean("is_active").notNull().default(true),
-    sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-);
+export const landingSlides = pgTable("landing_slides", {
+  id: serial("id").primaryKey(),
+  badge: text("badge"),
+  title: text("title").notNull(),
+  subtitle: text("subtitle"),
+  ctaText: text("cta_text"),
+  ctaHref: text("cta_href"),
+  cta2Text: text("cta2_text"),
+  cta2Href: text("cta2_href"),
+  accentColor: text("accent_color"),
+  image: text("image"),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
-export const landingFeatures = pgTable(
-  "landing_features",
-  {
-    id: text("id").primaryKey(),
-    icon: text("icon").notNull(),
-    title: text("title").notNull(),
-    desc: text("description"),
-    isActive: boolean("is_active").notNull().default(true),
-    sortOrder: integer("sort_order").notNull().default(0),
-  },
-);
+export const landingFeatures = pgTable("landing_features", {
+  id: serial("id").primaryKey(),
+  icon: text("icon").notNull(),
+  title: text("title").notNull(),
+  desc: text("desc"),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
 
 /* ------------------------------------------------------------------ */
 /* Customers / B2B users                                              */
@@ -317,7 +317,7 @@ export const landingFeatures = pgTable(
 export const users = pgTable(
   "users",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     username: text("username"),
     phone: text("phone"),
     email: text("email"),
@@ -348,7 +348,7 @@ export const users = pgTable(
 export const userAddresses = pgTable(
   "user_addresses",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -375,7 +375,7 @@ export const userAddresses = pgTable(
 export const orders = pgTable(
   "orders",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     orderNumber: text("order_number").notNull(),
     userId: text("user_id").references(() => users.id, {
       onDelete: "set null",
@@ -416,7 +416,7 @@ export const orders = pgTable(
 export const orderItems = pgTable(
   "order_items",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     orderId: text("order_id")
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
@@ -441,21 +441,18 @@ export const orderItems = pgTable(
 /* ------------------------------------------------------------------ */
 /* Uploaded files                                                     */
 /* ------------------------------------------------------------------ */
-export const uploadedFiles = pgTable(
-  "uploaded_files",
-  {
-    id: text("id").primaryKey(),
-    filename: text("filename").notNull(),
-    url: text("url").notNull(),
-    mimeType: text("mime_type"),
-    size: integer("size").notNull().default(0),
-    category: text("category").notNull().default("general"),
-    altText: text("alt_text"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-);
+export const uploadedFiles = pgTable("uploaded_files", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  url: text("url").notNull(),
+  mimeType: text("mime_type"),
+  size: integer("size").notNull().default(0),
+  category: text("category").notNull().default("general"),
+  altText: text("alt_text"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /* ------------------------------------------------------------------ */
 /* Quote requests (lead capture)                                      */
@@ -463,7 +460,7 @@ export const uploadedFiles = pgTable(
 export const quoteRequests = pgTable(
   "quote_requests",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     userId: text("user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -489,7 +486,7 @@ export const quoteRequests = pgTable(
 export const smsProviders = pgTable(
   "sms_providers",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     apiKey: text("api_key"),
@@ -505,22 +502,19 @@ export const smsProviders = pgTable(
 /* ------------------------------------------------------------------ */
 /* AI price update jobs (bulk admin upload)                           */
 /* ------------------------------------------------------------------ */
-export const aiPriceUpdateJobs = pgTable(
-  "ai_price_update_jobs",
-  {
-    id: text("id").primaryKey(),
-    filename: text("filename").notNull(),
-    mode: text("mode").notNull().default("manual"),
-    totalRows: integer("total_rows").notNull().default(0),
-    matchedRows: integer("matched_rows").notNull().default(0),
-    updatedRows: integer("updated_rows").notNull().default(0),
-    errorRows: integer("error_rows").notNull().default(0),
-    report: jsonb("report").notNull().default({} as Record<string, unknown>),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-);
+export const aiPriceUpdateJobs = pgTable("ai_price_update_jobs", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  mode: text("mode").notNull().default("manual"),
+  totalRows: integer("total_rows").notNull().default(0),
+  matchedRows: integer("matched_rows").notNull().default(0),
+  updatedRows: integer("updated_rows").notNull().default(0),
+  errorRows: integer("error_rows").notNull().default(0),
+  report: jsonb("report").notNull().default({} as Record<string, unknown>),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /* ------------------------------------------------------------------ */
 /* OTP codes                                                          */
@@ -528,7 +522,7 @@ export const aiPriceUpdateJobs = pgTable(
 export const otpCodes = pgTable(
   "otp_codes",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     channel: text("channel", { enum: ["sms", "email"] })
       .notNull()
       .default("sms"),
@@ -553,7 +547,7 @@ export const otpCodes = pgTable(
 export const chatSessions = pgTable(
   "chat_sessions",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     sessionToken: text("session_token").notNull(),
     userId: text("user_id").references(() => users.id, {
       onDelete: "set null",
@@ -580,7 +574,7 @@ export const chatSessions = pgTable(
 export const chatMessages = pgTable(
   "chat_messages",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     sessionId: text("session_id")
       .notNull()
       .references(() => chatSessions.id, { onDelete: "cascade" }),
@@ -607,7 +601,7 @@ export const chatMessages = pgTable(
 export const aiProviders = pgTable(
   "ai_providers",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     type: text("type", {
@@ -631,7 +625,7 @@ export const aiProviders = pgTable(
 export const aiFeatureProviders = pgTable(
   "ai_feature_providers",
   {
-    id: text("id").primaryKey(),
+    id: serial("id").primaryKey(),
     feature: text("feature").notNull(),
     providerId: text("provider_id")
       .notNull()
@@ -646,41 +640,85 @@ export const aiFeatureProviders = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
-/* Types                                                              */
+/* Types — Select (read) and Insert (write) variants for every table  */
 /* ------------------------------------------------------------------ */
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type NewAdminUser = typeof adminUsers.$inferInsert;
 
 export type SiteSetting = typeof siteSettings.$inferSelect;
+export type NewSiteSetting = typeof siteSettings.$inferInsert;
+
 export type ColorPalette = typeof colorPalettes.$inferSelect;
+export type NewColorPalette = typeof colorPalettes.$inferInsert;
+
 export type Category = typeof categories.$inferSelect;
+export type NewCategory = typeof categories.$inferInsert;
+
 export type Unit = typeof units.$inferSelect;
+export type NewUnit = typeof units.$inferInsert;
+
 export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
+
 export type ProductVariant = typeof productVariants.$inferSelect;
 export type NewProductVariant = typeof productVariants.$inferInsert;
+
 export type Cart = typeof carts.$inferSelect;
+export type NewCart = typeof carts.$inferInsert;
+
 export type CartItem = typeof cartItems.$inferSelect;
+export type NewCartItem = typeof cartItems.$inferInsert;
+
 export type WishlistItem = typeof wishlistItems.$inferSelect;
+export type NewWishlistItem = typeof wishlistItems.$inferInsert;
+
 export type LandingSlide = typeof landingSlides.$inferSelect;
+export type NewLandingSlide = typeof landingSlides.$inferInsert;
+
 export type LandingFeature = typeof landingFeatures.$inferSelect;
+export type NewLandingFeature = typeof landingFeatures.$inferInsert;
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
 export type UserAddress = typeof userAddresses.$inferSelect;
+export type NewUserAddress = typeof userAddresses.$inferInsert;
+
 export type Order = typeof orders.$inferSelect;
+export type NewOrder = typeof orders.$inferInsert;
+
 export type OrderItem = typeof orderItems.$inferSelect;
+export type NewOrderItem = typeof orderItems.$inferInsert;
+
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
+export type NewUploadedFile = typeof uploadedFiles.$inferInsert;
+
 export type QuoteRequest = typeof quoteRequests.$inferSelect;
+export type NewQuoteRequest = typeof quoteRequests.$inferInsert;
+
 export type SmsProvider = typeof smsProviders.$inferSelect;
+export type NewSmsProvider = typeof smsProviders.$inferInsert;
+
 export type AiPriceUpdateJob = typeof aiPriceUpdateJobs.$inferSelect;
+export type NewAiPriceUpdateJob = typeof aiPriceUpdateJobs.$inferInsert;
+
 export type OtpCode = typeof otpCodes.$inferSelect;
+export type NewOtpCode = typeof otpCodes.$inferInsert;
+
 export type ChatSession = typeof chatSessions.$inferSelect;
+export type NewChatSession = typeof chatSessions.$inferInsert;
+
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type NewChatMessage = typeof chatMessages.$inferInsert;
+
 export type AiProvider = typeof aiProviders.$inferSelect;
+export type NewAiProvider = typeof aiProviders.$inferInsert;
+
 export type AiFeatureProvider = typeof aiFeatureProviders.$inferSelect;
+export type NewAiFeatureProvider = typeof aiFeatureProviders.$inferInsert;
 
 /* ------------------------------------------------------------------ */
-/* Schema map                                                         */
+/* Schema map — single source of truth passed to drizzle()            */
 /* ------------------------------------------------------------------ */
 export const schema = {
   adminUsers,

@@ -18,8 +18,7 @@ import {
   productVariants,
 } from "@/db/schema";
 import {
-  readSessionToken,
-  generateSessionToken,
+  readOrGenerateSessionToken,
   resolveSessionCookieOptions,
   SESSION_COOKIE,
 } from "@/lib/commerce";
@@ -36,9 +35,8 @@ export async function ensureChatSession(): Promise<{
   sessionId: string;
   userId: string | null;
 }> {
-  const existing = await readSessionToken();
-  const sessionToken = existing || generateSessionToken();
-  if (!existing) {
+  const { token: sessionToken, generated } = await readOrGenerateSessionToken();
+  if (generated) {
     const opts = await resolveSessionCookieOptions();
     const store = await cookies();
     store.set(SESSION_COOKIE, sessionToken, opts);

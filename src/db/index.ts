@@ -12,9 +12,21 @@
  * returns a brand-new proxy with an extended op-list, so concurrent
  * queries never share state.
  *
+ * Connection caching
+ * ------------------
+ * The initialized client promise is cached on `globalThis` so that Next.js
+ * hot-reloads (and multiple module instances) reuse the same connection
+ * pool / PGlite instance. After PostgreSQL fails once, the
+ * `__dornikaPgPoolFailed` flag is set on `globalThis` to avoid retrying
+ * PostgreSQL on every request — we go straight to PGlite.
+ *
  * PGlite requires single SQL statements per call, so `splitSqlStatements`
  * is used to break the multi-statement bootstrap DDL string into
  * individual statements before execution.
+ *
+ * All `console.log` / `console.warn` calls are gated on
+ * `process.env.NODE_ENV !== "production"` so the production log stays
+ * quiet.
  */
 
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
@@ -33,6 +45,35 @@ type AnyDrizzleClient = ReturnType<
 type Op =
   | { type: "get"; prop: string }
   | { type: "call"; args: unknown[] };
+
+/**
+ * Shape of the cache we attach to `globalThis` so that Next.js dev
+ * hot-reloads reuse the same DB connection instead of opening new ones
+ * on every reload (which would leak pools / PGlite instances).
+ */
+type GlobalDbCache = {
+  __dornikaDbPromise?: Promise<AnyDrizzleClient>;
+  __dornikaPgPoolFailed?: boolean;
+  __dornikaIsPglite?: boolean;
+};
+
+const globalForDb = globalThis as unknown as GlobalDbCache;
+
+/* ------------------------------------------------------------------ */
+/* Dev-only logging                                                   */
+/* ------------------------------------------------------------------ */
+
+const isDev = process.env.NODE_ENV !== "production";
+
+function dbg(...args: unknown[]): void {
+  if (isDev) console.log("[db]", ...args);
+}
+function warn(...args: unknown[]): void {
+  if (isDev) console.warn("[db]", ...args);
+}
+function info(...args: unknown[]): void {
+  if (isDev) console.info("[db]", ...args);
+}
 
 /* ------------------------------------------------------------------ */
 /* SQL statement splitter                                             */
@@ -178,9 +219,11 @@ export function splitSqlStatements(input: string): string[] {
 /* Bootstrap DDL                                                      */
 /* ------------------------------------------------------------------ */
 
+const PGLITE_DATA_DIR = "/home/z/my-project/pglite-data";
+
 const BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS admin_users (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   name text NOT NULL,
   email text NOT NULL,
   password_hash text NOT NULL,
@@ -192,7 +235,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
 CREATE UNIQUE INDEX IF NOT EXISTS admin_users_email_idx ON admin_users (email);
 
 CREATE TABLE IF NOT EXISTS site_settings (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   key text NOT NULL,
   "group" text NOT NULL DEFAULT 'general',
   locale text NOT NULL DEFAULT 'fa',
@@ -203,7 +246,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS site_settings_key_locale_idx ON site_settings (key, locale);
 
 CREATE TABLE IF NOT EXISTS color_palettes (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   slug text NOT NULL,
   name text NOT NULL,
   colors jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -214,8 +257,8 @@ CREATE TABLE IF NOT EXISTS color_palettes (
 CREATE UNIQUE INDEX IF NOT EXISTS color_palettes_slug_idx ON color_palettes (slug);
 
 CREATE TABLE IF NOT EXISTS categories (
-  id text PRIMARY KEY,
-  parent_id text,
+  id SERIAL PRIMARY KEY,
+  parent_id integer,
   slug text NOT NULL,
   title text NOT NULL,
   description text,
@@ -228,7 +271,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS categories_slug_idx ON categories (slug);
 CREATE INDEX IF NOT EXISTS categories_parent_id_idx ON categories (parent_id);
 
 CREATE TABLE IF NOT EXISTS units (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   slug text NOT NULL,
   name text NOT NULL,
   name_en text,
@@ -240,8 +283,8 @@ CREATE TABLE IF NOT EXISTS units (
 CREATE UNIQUE INDEX IF NOT EXISTS units_slug_idx ON units (slug);
 
 CREATE TABLE IF NOT EXISTS products (
-  id text PRIMARY KEY,
-  category_id text,
+  id SERIAL PRIMARY KEY,
+  category_id integer,
   slug text NOT NULL,
   title text NOT NULL,
   subtitle text,
@@ -252,7 +295,7 @@ CREATE TABLE IF NOT EXISTS products (
   status text NOT NULL DEFAULT 'draft',
   sort_order integer NOT NULL DEFAULT 0,
   meta_title text,
-  meta_description text,
+  meta_desc text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -260,9 +303,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS products_slug_idx ON products (slug);
 CREATE INDEX IF NOT EXISTS products_category_id_idx ON products (category_id);
 
 CREATE TABLE IF NOT EXISTS product_variants (
-  id text PRIMARY KEY,
-  product_id text NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  unit_id text REFERENCES units(id) ON DELETE SET NULL,
+  id SERIAL PRIMARY KEY,
+  product_id integer NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  unit_id integer REFERENCES units(id) ON DELETE SET NULL,
   sku text,
   name text NOT NULL,
   name_en text,
@@ -278,7 +321,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS product_variants_sku_idx ON product_variants (
 CREATE INDEX IF NOT EXISTS product_variants_product_id_idx ON product_variants (product_id);
 
 CREATE TABLE IF NOT EXISTS carts (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_token text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -286,9 +329,9 @@ CREATE TABLE IF NOT EXISTS carts (
 CREATE UNIQUE INDEX IF NOT EXISTS carts_session_token_idx ON carts (session_token);
 
 CREATE TABLE IF NOT EXISTS cart_items (
-  id text PRIMARY KEY,
-  cart_id text NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
-  variant_id text REFERENCES product_variants(id) ON DELETE CASCADE,
+  id SERIAL PRIMARY KEY,
+  cart_id integer NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+  variant_id integer REFERENCES product_variants(id) ON DELETE CASCADE,
   quantity integer NOT NULL DEFAULT 1,
   price_snapshot numeric(18,2),
   product_title_snapshot text,
@@ -301,15 +344,15 @@ CREATE INDEX IF NOT EXISTS cart_items_cart_id_idx ON cart_items (cart_id);
 CREATE INDEX IF NOT EXISTS cart_items_variant_id_idx ON cart_items (variant_id);
 
 CREATE TABLE IF NOT EXISTS wishlist_items (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_token text NOT NULL,
-  product_id text REFERENCES products(id) ON DELETE CASCADE,
+  product_id integer REFERENCES products(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS wishlist_items_session_product_idx ON wishlist_items (session_token, product_id);
 
 CREATE TABLE IF NOT EXISTS landing_slides (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   badge text,
   title text NOT NULL,
   subtitle text,
@@ -325,16 +368,16 @@ CREATE TABLE IF NOT EXISTS landing_slides (
 );
 
 CREATE TABLE IF NOT EXISTS landing_features (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   icon text NOT NULL,
   title text NOT NULL,
-  description text,
+  "desc" text,
   is_active boolean NOT NULL DEFAULT true,
   sort_order integer NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS users (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   phone text,
   email text,
   name text,
@@ -350,8 +393,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_phone_idx ON users (phone);
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);
 
 CREATE TABLE IF NOT EXISTS user_addresses (
-  id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id SERIAL PRIMARY KEY,
+  user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title text,
   province text,
   city text,
@@ -365,9 +408,9 @@ CREATE TABLE IF NOT EXISTS user_addresses (
 CREATE INDEX IF NOT EXISTS user_addresses_user_id_idx ON user_addresses (user_id);
 
 CREATE TABLE IF NOT EXISTS orders (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   order_number text NOT NULL,
-  user_id text REFERENCES users(id) ON DELETE SET NULL,
+  user_id integer REFERENCES users(id) ON DELETE SET NULL,
   status text NOT NULL DEFAULT 'pending',
   total_amount numeric(18,2) NOT NULL DEFAULT 0,
   shipping_address text,
@@ -381,9 +424,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS orders_order_number_idx ON orders (order_numbe
 CREATE INDEX IF NOT EXISTS orders_user_id_idx ON orders (user_id);
 
 CREATE TABLE IF NOT EXISTS order_items (
-  id text PRIMARY KEY,
-  order_id text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  variant_id text,
+  id SERIAL PRIMARY KEY,
+  order_id integer NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  variant_id integer,
   sku text,
   product_title text NOT NULL,
   variant_title text,
@@ -395,7 +438,7 @@ CREATE INDEX IF NOT EXISTS order_items_order_id_idx ON order_items (order_id);
 CREATE INDEX IF NOT EXISTS order_items_variant_id_idx ON order_items (variant_id);
 
 CREATE TABLE IF NOT EXISTS uploaded_files (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   filename text NOT NULL,
   url text NOT NULL,
   mime_type text,
@@ -406,8 +449,8 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
 );
 
 CREATE TABLE IF NOT EXISTS quote_requests (
-  id text PRIMARY KEY,
-  user_id text REFERENCES users(id) ON DELETE SET NULL,
+  id SERIAL PRIMARY KEY,
+  user_id integer REFERENCES users(id) ON DELETE SET NULL,
   name text NOT NULL,
   phone text NOT NULL,
   email text,
@@ -418,7 +461,7 @@ CREATE TABLE IF NOT EXISTS quote_requests (
 );
 
 CREATE TABLE IF NOT EXISTS sms_providers (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   slug text NOT NULL,
   name text NOT NULL,
   api_key text,
@@ -429,7 +472,7 @@ CREATE TABLE IF NOT EXISTS sms_providers (
 CREATE UNIQUE INDEX IF NOT EXISTS sms_providers_slug_idx ON sms_providers (slug);
 
 CREATE TABLE IF NOT EXISTS ai_price_update_jobs (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   filename text NOT NULL,
   mode text NOT NULL DEFAULT 'manual',
   total_rows integer NOT NULL DEFAULT 0,
@@ -441,7 +484,7 @@ CREATE TABLE IF NOT EXISTS ai_price_update_jobs (
 );
 
 CREATE TABLE IF NOT EXISTS otp_codes (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   channel text NOT NULL DEFAULT 'sms',
   destination text NOT NULL,
   code text,
@@ -454,9 +497,9 @@ CREATE TABLE IF NOT EXISTS otp_codes (
 CREATE INDEX IF NOT EXISTS otp_codes_destination_idx ON otp_codes (destination);
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_token text NOT NULL,
-  user_id text REFERENCES users(id) ON DELETE SET NULL,
+  user_id integer REFERENCES users(id) ON DELETE SET NULL,
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -464,8 +507,8 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS chat_sessions_session_token_idx ON chat_sessions (session_token);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
-  id text PRIMARY KEY,
-  session_id text NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  id SERIAL PRIMARY KEY,
+  session_id integer NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
   role text NOT NULL,
   content text NOT NULL,
   image_url text,
@@ -475,7 +518,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS chat_messages_session_id_idx ON chat_messages (session_id);
 
 CREATE TABLE IF NOT EXISTS ai_providers (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   slug text NOT NULL,
   name text NOT NULL,
   type text NOT NULL,
@@ -490,14 +533,18 @@ CREATE TABLE IF NOT EXISTS ai_providers (
 CREATE UNIQUE INDEX IF NOT EXISTS ai_providers_slug_idx ON ai_providers (slug);
 
 CREATE TABLE IF NOT EXISTS ai_feature_providers (
-  id text PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   feature text NOT NULL,
-  provider_id text NOT NULL REFERENCES ai_providers(id) ON DELETE CASCADE,
+  provider_id integer NOT NULL REFERENCES ai_providers(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ai_feature_providers_feature_idx ON ai_feature_providers (feature);
 `;
 
+/**
+ * Idempotent migrations — ALTER TABLE ... ADD COLUMN IF NOT EXISTS so
+ * older PGlite data dirs get upgraded in place without losing data.
+ */
 const MIGRATION_SQL = `
 ALTER TABLE users ADD COLUMN IF NOT EXISTS username text;
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users (username);
@@ -507,10 +554,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users (username);
 /* Initialization                                                     */
 /* ------------------------------------------------------------------ */
 
-let clientPromise: Promise<AnyDrizzleClient> | null = null;
-let isPglite = false;
-
 async function tryPostgreSQL(): Promise<AnyDrizzleClient | null> {
+  // If we previously failed, don't retry — go straight to PGlite.
+  if (globalForDb.__dornikaPgPoolFailed) {
+    return null;
+  }
+
   const url = process.env.DATABASE_URL;
   if (!url) return null;
   if (/^(file|sqlite|memory):/i.test(url)) return null;
@@ -537,8 +586,7 @@ async function tryPostgreSQL(): Promise<AnyDrizzleClient | null> {
     probe.release();
 
     const client = drizzlePg(pool, { schema });
-    // Mark as not pglite
-    isPglite = false;
+    globalForDb.__dornikaIsPglite = false;
     return client as unknown as AnyDrizzleClient;
   } catch (err) {
     try {
@@ -546,8 +594,10 @@ async function tryPostgreSQL(): Promise<AnyDrizzleClient | null> {
     } catch {
       /* ignore */
     }
-    console.warn(
-      "[db] PostgreSQL unavailable, falling back to PGlite:",
+    // Mark as failed so we don't retry PostgreSQL on every request.
+    globalForDb.__dornikaPgPoolFailed = true;
+    warn(
+      "PostgreSQL unavailable, falling back to PGlite:",
       err instanceof Error ? err.message : String(err),
     );
     return null;
@@ -557,35 +607,45 @@ async function tryPostgreSQL(): Promise<AnyDrizzleClient | null> {
 async function initPGlite(): Promise<AnyDrizzleClient> {
   const { PGlite } = await import("@electric-sql/pglite");
   const pglite = await PGlite.create({
-    dataDir: "file://memory" /* in-memory */,
+    dataDir: `file://${PGLITE_DATA_DIR}`,
   });
 
   // Apply bootstrap DDL — PGlite requires single statements per call.
-  const stmts = splitSqlStatements(BOOTSTRAP_SQL);
-  for (const stmt of stmts) {
-    await pglite.query(stmt);
+  for (const stmt of splitSqlStatements(BOOTSTRAP_SQL)) {
+    try {
+      await pglite.query(stmt);
+    } catch (err) {
+      // Bootstrap statements are idempotent (IF NOT EXISTS), but
+      // log any unexpected errors so schema drift is visible in dev.
+      warn(
+        "bootstrap statement skipped:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
-  // Apply migrations — these are idempotent.
+  // Apply migrations — these are idempotent (ADD COLUMN IF NOT EXISTS).
   for (const stmt of splitSqlStatements(MIGRATION_SQL)) {
     try {
       await pglite.query(stmt);
     } catch (err) {
-      // Migrations are best-effort — log and continue.
-      console.warn("[db] migration skipped:", err instanceof Error ? err.message : String(err));
+      warn(
+        "migration skipped:",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
   const client = drizzlePglite(pglite, { schema });
-  isPglite = true;
-  console.info("[db] PGlite initialized (sandbox mode).");
+  globalForDb.__dornikaIsPglite = true;
+  info("PGlite initialized (sandbox mode) at", PGLITE_DATA_DIR);
   return client as unknown as AnyDrizzleClient;
 }
 
 async function initClient(): Promise<AnyDrizzleClient> {
   const pg = await tryPostgreSQL();
   if (pg) {
-    console.info("[db] Connected to PostgreSQL.");
+    info("Connected to PostgreSQL.");
     return pg;
   }
   return await initPGlite();
@@ -593,13 +653,14 @@ async function initClient(): Promise<AnyDrizzleClient> {
 
 /**
  * Returns the initialized Drizzle client (initializing it on first call).
- * Safe to call multiple times — the same promise is reused.
+ * Safe to call multiple times — the same promise is reused, and the
+ * promise is cached on `globalThis` to survive Next.js dev hot-reloads.
  */
 export async function getDb(): Promise<AnyDrizzleClient> {
-  if (!clientPromise) {
-    clientPromise = initClient();
+  if (!globalForDb.__dornikaDbPromise) {
+    globalForDb.__dornikaDbPromise = initClient();
   }
-  return clientPromise;
+  return globalForDb.__dornikaDbPromise;
 }
 
 /**
@@ -608,8 +669,19 @@ export async function getDb(): Promise<AnyDrizzleClient> {
  * has completed.
  */
 export function isUsingPglite(): boolean | null {
-  if (!clientPromise) return null;
-  return isPglite;
+  if (!globalForDb.__dornikaDbPromise) return null;
+  return globalForDb.__dornikaIsPglite ?? null;
+}
+
+/**
+ * Reset the cached client + failure flag. Intended for tests only.
+ * Calling this in production will force a fresh connection attempt on
+ * the next `getDb()` call.
+ */
+export function __resetDbForTests(): void {
+  globalForDb.__dornikaDbPromise = undefined;
+  globalForDb.__dornikaPgPoolFailed = undefined;
+  globalForDb.__dornikaIsPglite = undefined;
 }
 
 /* ------------------------------------------------------------------ */

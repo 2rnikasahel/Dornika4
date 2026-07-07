@@ -20,8 +20,7 @@ import {
   units,
 } from "@/db/schema";
 import {
-  readSessionToken,
-  generateSessionToken,
+  readOrGenerateSessionToken,
   resolveSessionCookieOptions,
   SESSION_COOKIE,
 } from "@/lib/commerce";
@@ -57,13 +56,13 @@ export async function ensureSessionToken(): Promise<{
   token: string;
   isNew: boolean;
 }> {
-  const existing = await readSessionToken();
-  if (existing) return { token: existing, isNew: false };
-  const fresh = generateSessionToken();
-  const opts = await resolveSessionCookieOptions();
-  const store = await cookies();
-  store.set(SESSION_COOKIE, fresh, opts);
-  return { token: fresh, isNew: true };
+  const { token, generated } = await readOrGenerateSessionToken();
+  if (generated) {
+    const opts = await resolveSessionCookieOptions();
+    const store = await cookies();
+    store.set(SESSION_COOKIE, token, opts);
+  }
+  return { token, isNew: generated };
 }
 
 async function getOrCreateCartId(sessionToken: string): Promise<string> {

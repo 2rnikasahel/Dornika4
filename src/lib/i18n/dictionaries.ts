@@ -32,6 +32,7 @@ const fa: Dictionary = {
     title: "درنیکا ساحل",
     subtitle:
       "پلتفرم تخصصی تأمین مواد اولیه و تجهیزات صنعتی با فناوری هوش مصنوعی",
+    cta: "مشاهده محصولات",
     cta1: "مشاهده محصولات",
     cta2: "درخواست مشاوره",
   },
@@ -177,6 +178,7 @@ const en: Dictionary = {
     title: "Dornika Sahel",
     subtitle:
       "Specialized platform for industrial raw materials and equipment powered by AI",
+    cta: "Browse Products",
     cta1: "Browse Products",
     cta2: "Request Consultation",
   },

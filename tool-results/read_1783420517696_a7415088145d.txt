@@ -1,0 +1,752 @@
+     1→     1→import {
+     2→     2→  pgTable,
+     3→     3→  text,
+     4→     4→  boolean,
+     5→     5→  integer,
+     6→     6→  decimal,
+     7→     7→  timestamp,
+     8→     8→  jsonb,
+     9→     9→  index,
+    10→    10→  uniqueIndex,
+    11→    11→  varchar,
+    12→    12→} from "drizzle-orm/pg-core";
+    13→    13→
+    14→    14→/**
+    15→    15→ * Drizzle ORM schema for "درنیکا ساحل" (Dornika Sahel)
+    16→    16→ * luxury industrial e-commerce platform.
+    17→    17→ *
+    18→    18→ * The schema is shared between PostgreSQL (production) and PGlite (sandbox).
+    19→    19→ * All tables use text primary keys (cuid-style) to keep IDs portable.
+    20→    20→ *
+    21→    21→ * Column names use camelCase in TypeScript and snake_case in SQL.
+    22→    22→ * Indexes are named explicitly so they match between the runtime DDL
+    23→    23→ * (see `src/db/index.ts` BOOTSTRAP_SQL) and Drizzle migrations.
+    24→    24→ */
+    25→    25→
+    26→    26→/* ------------------------------------------------------------------ */
+    27→    27→/* Admin users                                                        */
+    28→    28→/* ------------------------------------------------------------------ */
+    29→    29→export const adminUsers = pgTable(
+    30→    30→  "admin_users",
+    31→    31→  {
+    32→    32→    id: text("id").primaryKey(),
+    33→    33→    name: text("name").notNull(),
+    34→    34→    email: text("email").notNull(),
+    35→    35→    passwordHash: text("password_hash").notNull(),
+    36→    36→    role: text("role", { enum: ["admin", "super_admin"] })
+    37→    37→      .notNull()
+    38→    38→      .default("admin"),
+    39→    39→    isActive: boolean("is_active").notNull().default(true),
+    40→    40→    createdAt: timestamp("created_at", { withTimezone: true })
+    41→    41→      .notNull()
+    42→    42→      .defaultNow(),
+    43→    43→    updatedAt: timestamp("updated_at", { withTimezone: true })
+    44→    44→      .notNull()
+    45→    45→      .defaultNow(),
+    46→    46→  },
+    47→    47→  (t) => ({
+    48→    48→    emailIdx: uniqueIndex("admin_users_email_idx").on(t.email),
+    49→    49→  }),
+    50→    50→);
+    51→    51→
+    52→    52→/* ------------------------------------------------------------------ */
+    53→    53→/* Site settings (key/value with locale + group)                      */
+    54→    54→/* ------------------------------------------------------------------ */
+    55→    55→export const siteSettings = pgTable(
+    56→    56→  "site_settings",
+    57→    57→  {
+    58→    58→    id: text("id").primaryKey(),
+    59→    59→    key: text("key").notNull(),
+    60→    60→    group: text("group").notNull().default("general"),
+    61→    61→    locale: text("locale").notNull().default("fa"),
+    62→    62→    value: jsonb("value").notNull().default({} as Record<string, unknown>),
+    63→    63→    description: text("description"),
+    64→    64→    updatedAt: timestamp("updated_at", { withTimezone: true })
+    65→    65→      .notNull()
+    66→    66→      .defaultNow(),
+    67→    67→  },
+    68→    68→  (t) => ({
+    69→    69→    keyLocaleIdx: uniqueIndex("site_settings_key_locale_idx").on(
+    70→    70→      t.key,
+    71→    71→      t.locale,
+    72→    72→    ),
+    73→    73→  }),
+    74→    74→);
+    75→    75→
+    76→    76→/* ------------------------------------------------------------------ */
+    77→    77→/* Color palettes                                                     */
+    78→    78→/* ------------------------------------------------------------------ */
+    79→    79→export const colorPalettes = pgTable(
+    80→    80→  "color_palettes",
+    81→    81→  {
+    82→    82→    id: text("id").primaryKey(),
+    83→    83→    slug: text("slug").notNull(),
+    84→    84→    name: text("name").notNull(),
+    85→    85→    colors: jsonb("colors").notNull().default({} as Record<string, string>),
+    86→    86→    isActive: boolean("is_active").notNull().default(false),
+    87→    87→    sortOrder: integer("sort_order").notNull().default(0),
+    88→    88→    createdAt: timestamp("created_at", { withTimezone: true })
+    89→    89→      .notNull()
+    90→    90→      .defaultNow(),
+    91→    91→  },
+    92→    92→  (t) => ({
+    93→    93→    slugIdx: uniqueIndex("color_palettes_slug_idx").on(t.slug),
+    94→    94→  }),
+    95→    95→);
+    96→    96→
+    97→    97→/* ------------------------------------------------------------------ */
+    98→    98→/* Categories (self-referencing parent/child)                         */
+    99→    99→/* ------------------------------------------------------------------ */
+   100→   100→export const categories = pgTable(
+   101→   101→  "categories",
+   102→   102→  {
+   103→   103→    id: text("id").primaryKey(),
+   104→   104→    parentId: text("parent_id"),
+   105→   105→    slug: text("slug").notNull(),
+   106→   106→    title: text("title").notNull(),
+   107→   107→    description: text("description"),
+   108→   108→    image: text("image"),
+   109→   109→    sortOrder: integer("sort_order").notNull().default(0),
+   110→   110→    isActive: boolean("is_active").notNull().default(true),
+   111→   111→    createdAt: timestamp("created_at", { withTimezone: true })
+   112→   112→      .notNull()
+   113→   113→      .defaultNow(),
+   114→   114→  },
+   115→   115→  (t) => ({
+   116→   116→    slugIdx: uniqueIndex("categories_slug_idx").on(t.slug),
+   117→   117→    parentIdx: index("categories_parent_id_idx").on(t.parentId),
+   118→   118→  }),
+   119→   119→);
+   120→   120→
+   121→   121→/* ------------------------------------------------------------------ */
+   122→   122→/* Units of measurement                                               */
+   123→   123→/* ------------------------------------------------------------------ */
+   124→   124→export const units = pgTable(
+   125→   125→  "units",
+   126→   126→  {
+   127→   127→    id: text("id").primaryKey(),
+   128→   128→    slug: text("slug").notNull(),
+   129→   129→    name: text("name").notNull(),
+   130→   130→    nameEn: text("name_en"),
+   131→   131→    symbol: text("symbol").notNull(),
+   132→   132→    category: text("category").notNull().default("general"),
+   133→   133→    isActive: boolean("is_active").notNull().default(true),
+   134→   134→    sortOrder: integer("sort_order").notNull().default(0),
+   135→   135→  },
+   136→   136→  (t) => ({
+   137→   137→    slugIdx: uniqueIndex("units_slug_idx").on(t.slug),
+   138→   138→  }),
+   139→   139→);
+   140→   140→
+   141→   141→/* ------------------------------------------------------------------ */
+   142→   142→/* Products                                                           */
+   143→   143→/* ------------------------------------------------------------------ */
+   144→   144→export const products = pgTable(
+   145→   145→  "products",
+   146→   146→  {
+   147→   147→    id: text("id").primaryKey(),
+   148→   148→    categoryId: text("category_id"),
+   149→   149→    slug: text("slug").notNull(),
+   150→   150→    title: text("title").notNull(),
+   151→   151→    subtitle: text("subtitle"),
+   152→   152→    description: text("description"),
+   153→   153→    images: jsonb("images").notNull().default([] as string[]),
+   154→   154→    coverImage: text("cover_image"),
+   155→   155→    isActive: boolean("is_active").notNull().default(true),
+   156→   156→    status: text("status", {
+   157→   157→      enum: ["draft", "published", "archived", "active"],
+   158→   158→    })
+   159→   159→      .notNull()
+   160→   160→      .default("draft"),
+   161→   161→    sortOrder: integer("sort_order").notNull().default(0),
+   162→   162→    metaTitle: text("meta_title"),
+   163→   163→    metaDesc: text("meta_desc"),
+   164→   164→    createdAt: timestamp("created_at", { withTimezone: true })
+   165→   165→      .notNull()
+   166→   166→      .defaultNow(),
+   167→   167→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   168→   168→      .notNull()
+   169→   169→      .defaultNow(),
+   170→   170→  },
+   171→   171→  (t) => ({
+   172→   172→    slugIdx: uniqueIndex("products_slug_idx").on(t.slug),
+   173→   173→    categoryIdx: index("products_category_id_idx").on(t.categoryId),
+   174→   174→  }),
+   175→   175→);
+   176→   176→
+   177→   177→/* ------------------------------------------------------------------ */
+   178→   178→/* Product variants (SKU-level rows with price + stock)               */
+   179→   179→/* ------------------------------------------------------------------ */
+   180→   180→export const productVariants = pgTable(
+   181→   181→  "product_variants",
+   182→   182→  {
+   183→   183→    id: text("id").primaryKey(),
+   184→   184→    productId: text("product_id")
+   185→   185→      .notNull()
+   186→   186→      .references(() => products.id, { onDelete: "cascade" }),
+   187→   187→    unitId: text("unit_id").references(() => units.id, {
+   188→   188→      onDelete: "set null",
+   189→   189→    }),
+   190→   190→    sku: text("sku"),
+   191→   191→    name: text("name").notNull(),
+   192→   192→    nameEn: text("name_en"),
+   193→   193→    price: decimal("price", { precision: 18, scale: 2 })
+   194→   194→      .notNull()
+   195→   195→      .default("0"),
+   196→   196→    unitValue: text("unit_value"),
+   197→   197→    stock: integer("stock").notNull().default(0),
+   198→   198→    specSheet: jsonb("spec_sheet").notNull().default(
+   199→   199→      {} as Record<string, unknown>,
+   200→   200→    ),
+   201→   201→    isActive: boolean("is_active").notNull().default(true),
+   202→   202→    sortOrder: integer("sort_order").notNull().default(0),
+   203→   203→    createdAt: timestamp("created_at", { withTimezone: true })
+   204→   204→      .notNull()
+   205→   205→      .defaultNow(),
+   206→   206→  },
+   207→   207→  (t) => ({
+   208→   208→    skuIdx: uniqueIndex("product_variants_sku_idx").on(t.sku),
+   209→   209→    productIdx: index("product_variants_product_id_idx").on(t.productId),
+   210→   210→  }),
+   211→   211→);
+   212→   212→
+   213→   213→/* ------------------------------------------------------------------ */
+   214→   214→/* Carts + cart items (session based)                                 */
+   215→   215→/* ------------------------------------------------------------------ */
+   216→   216→export const carts = pgTable(
+   217→   217→  "carts",
+   218→   218→  {
+   219→   219→    id: text("id").primaryKey(),
+   220→   220→    sessionToken: text("session_token").notNull(),
+   221→   221→    createdAt: timestamp("created_at", { withTimezone: true })
+   222→   222→      .notNull()
+   223→   223→      .defaultNow(),
+   224→   224→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   225→   225→      .notNull()
+   226→   226→      .defaultNow(),
+   227→   227→  },
+   228→   228→  (t) => ({
+   229→   229→    sessionIdx: uniqueIndex("carts_session_token_idx").on(t.sessionToken),
+   230→   230→  }),
+   231→   231→);
+   232→   232→
+   233→   233→export const cartItems = pgTable(
+   234→   234→  "cart_items",
+   235→   235→  {
+   236→   236→    id: text("id").primaryKey(),
+   237→   237→    cartId: text("cart_id")
+   238→   238→      .notNull()
+   239→   239→      .references(() => carts.id, { onDelete: "cascade" }),
+   240→   240→    variantId: text("variant_id").references(() => productVariants.id, {
+   241→   241→      onDelete: "cascade",
+   242→   242→    }),
+   243→   243→    quantity: integer("quantity").notNull().default(1),
+   244→   244→    priceSnapshot: decimal("price_snapshot", { precision: 18, scale: 2 }),
+   245→   245→    productTitleSnapshot: text("product_title_snapshot"),
+   246→   246→    variantTitleSnapshot: text("variant_title_snapshot"),
+   247→   247→    unitLabelSnapshot: text("unit_label_snapshot"),
+   248→   248→    createdAt: timestamp("created_at", { withTimezone: true })
+   249→   249→      .notNull()
+   250→   250→      .defaultNow(),
+   251→   251→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   252→   252→      .notNull()
+   253→   253→      .defaultNow(),
+   254→   254→  },
+   255→   255→  (t) => ({
+   256→   256→    cartIdx: index("cart_items_cart_id_idx").on(t.cartId),
+   257→   257→    variantIdx: index("cart_items_variant_id_idx").on(t.variantId),
+   258→   258→  }),
+   259→   259→);
+   260→   260→
+   261→   261→/* ------------------------------------------------------------------ */
+   262→   262→/* Wishlist                                                           */
+   263→   263→/* ------------------------------------------------------------------ */
+   264→   264→export const wishlistItems = pgTable(
+   265→   265→  "wishlist_items",
+   266→   266→  {
+   267→   267→    id: text("id").primaryKey(),
+   268→   268→    sessionToken: text("session_token").notNull(),
+   269→   269→    productId: text("product_id").references(() => products.id, {
+   270→   270→      onDelete: "cascade",
+   271→   271→    }),
+   272→   272→    createdAt: timestamp("created_at", { withTimezone: true })
+   273→   273→      .notNull()
+   274→   274→      .defaultNow(),
+   275→   275→  },
+   276→   276→  (t) => ({
+   277→   277→    sessionProductIdx: uniqueIndex(
+   278→   278→      "wishlist_items_session_product_idx",
+   279→   279→    ).on(t.sessionToken, t.productId),
+   280→   280→  }),
+   281→   281→);
+   282→   282→
+   283→   283→/* ------------------------------------------------------------------ */
+   284→   284→/* Landing page content                                               */
+   285→   285→/* ------------------------------------------------------------------ */
+   286→   286→export const landingSlides = pgTable("landing_slides", {
+   287→   287→  id: text("id").primaryKey(),
+   288→   288→  badge: text("badge"),
+   289→   289→  title: text("title").notNull(),
+   290→   290→  subtitle: text("subtitle"),
+   291→   291→  ctaText: text("cta_text"),
+   292→   292→  ctaHref: text("cta_href"),
+   293→   293→  cta2Text: text("cta2_text"),
+   294→   294→  cta2Href: text("cta2_href"),
+   295→   295→  accentColor: text("accent_color"),
+   296→   296→  image: text("image"),
+   297→   297→  isActive: boolean("is_active").notNull().default(true),
+   298→   298→  sortOrder: integer("sort_order").notNull().default(0),
+   299→   299→  createdAt: timestamp("created_at", { withTimezone: true })
+   300→   300→    .notNull()
+   301→   301→    .defaultNow(),
+   302→   302→});
+   303→   303→
+   304→   304→export const landingFeatures = pgTable("landing_features", {
+   305→   305→  id: text("id").primaryKey(),
+   306→   306→  icon: text("icon").notNull(),
+   307→   307→  title: text("title").notNull(),
+   308→   308→  desc: text("desc"),
+   309→   309→  isActive: boolean("is_active").notNull().default(true),
+   310→   310→  sortOrder: integer("sort_order").notNull().default(0),
+   311→   311→});
+   312→   312→
+   313→   313→/* ------------------------------------------------------------------ */
+   314→   314→/* Customers / B2B users                                              */
+   315→   315→/* ------------------------------------------------------------------ */
+   316→   316→export const users = pgTable(
+   317→   317→  "users",
+   318→   318→  {
+   319→   319→    id: text("id").primaryKey(),
+   320→   320→    username: text("username"),
+   321→   321→    phone: text("phone"),
+   322→   322→    email: text("email"),
+   323→   323→    name: text("name"),
+   324→   324→    passwordHash: text("password_hash"),
+   325→   325→    role: text("role", {
+   326→   326→      enum: ["customer", "b2b", "admin", "super_admin"],
+   327→   327→    })
+   328→   328→      .notNull()
+   329→   329→      .default("customer"),
+   330→   330→    companyName: text("company_name"),
+   331→   331→    economicCode: text("economic_code"),
+   332→   332→    isActive: boolean("is_active").notNull().default(true),
+   333→   333→    createdAt: timestamp("created_at", { withTimezone: true })
+   334→   334→      .notNull()
+   335→   335→      .defaultNow(),
+   336→   336→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   337→   337→      .notNull()
+   338→   338→      .defaultNow(),
+   339→   339→  },
+   340→   340→  (t) => ({
+   341→   341→    usernameIdx: uniqueIndex("users_username_idx").on(t.username),
+   342→   342→    phoneIdx: uniqueIndex("users_phone_idx").on(t.phone),
+   343→   343→    emailIdx: uniqueIndex("users_email_idx").on(t.email),
+   344→   344→  }),
+   345→   345→);
+   346→   346→
+   347→   347→export const userAddresses = pgTable(
+   348→   348→  "user_addresses",
+   349→   349→  {
+   350→   350→    id: text("id").primaryKey(),
+   351→   351→    userId: text("user_id")
+   352→   352→      .notNull()
+   353→   353→      .references(() => users.id, { onDelete: "cascade" }),
+   354→   354→    title: text("title"),
+   355→   355→    province: text("province"),
+   356→   356→    city: text("city"),
+   357→   357→    postalAddress: text("postal_address"),
+   358→   358→    postalCode: text("postal_code"),
+   359→   359→    receiverName: text("receiver_name"),
+   360→   360→    receiverPhone: text("receiver_phone"),
+   361→   361→    isDefault: boolean("is_default").notNull().default(false),
+   362→   362→    createdAt: timestamp("created_at", { withTimezone: true })
+   363→   363→      .notNull()
+   364→   364→      .defaultNow(),
+   365→   365→  },
+   366→   366→  (t) => ({
+   367→   367→    userIdx: index("user_addresses_user_id_idx").on(t.userId),
+   368→   368→  }),
+   369→   369→);
+   370→   370→
+   371→   371→/* ------------------------------------------------------------------ */
+   372→   372→/* Orders                                                             */
+   373→   373→/* ------------------------------------------------------------------ */
+   374→   374→export const orders = pgTable(
+   375→   375→  "orders",
+   376→   376→  {
+   377→   377→    id: text("id").primaryKey(),
+   378→   378→    orderNumber: text("order_number").notNull(),
+   379→   379→    userId: text("user_id").references(() => users.id, {
+   380→   380→      onDelete: "set null",
+   381→   381→    }),
+   382→   382→    status: text("status", {
+   383→   383→      enum: [
+   384→   384→        "pending",
+   385→   385→        "confirmed",
+   386→   386→        "processing",
+   387→   387→        "shipped",
+   388→   388→        "delivered",
+   389→   389→        "cancelled",
+   390→   390→        "refunded",
+   391→   391→      ],
+   392→   392→    })
+   393→   393→      .notNull()
+   394→   394→      .default("pending"),
+   395→   395→    totalAmount: decimal("total_amount", { precision: 18, scale: 2 })
+   396→   396→      .notNull()
+   397→   397→      .default("0"),
+   398→   398→    shippingAddress: text("shipping_address"),
+   399→   399→    paymentMethod: text("payment_method"),
+   400→   400→    paymentRef: text("payment_ref"),
+   401→   401→    notes: text("notes"),
+   402→   402→    createdAt: timestamp("created_at", { withTimezone: true })
+   403→   403→      .notNull()
+   404→   404→      .defaultNow(),
+   405→   405→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   406→   406→      .notNull()
+   407→   407→      .defaultNow(),
+   408→   408→  },
+   409→   409→  (t) => ({
+   410→   410→    orderNumberIdx: uniqueIndex("orders_order_number_idx").on(t.orderNumber),
+   411→   411→    userIdx: index("orders_user_id_idx").on(t.userId),
+   412→   412→  }),
+   413→   413→);
+   414→   414→
+   415→   415→export const orderItems = pgTable(
+   416→   416→  "order_items",
+   417→   417→  {
+   418→   418→    id: text("id").primaryKey(),
+   419→   419→    orderId: text("order_id")
+   420→   420→      .notNull()
+   421→   421→      .references(() => orders.id, { onDelete: "cascade" }),
+   422→   422→    variantId: text("variant_id"),
+   423→   423→    sku: text("sku"),
+   424→   424→    productTitle: text("product_title").notNull(),
+   425→   425→    variantTitle: text("variant_title"),
+   426→   426→    quantity: integer("quantity").notNull().default(1),
+   427→   427→    unitPrice: decimal("unit_price", { precision: 18, scale: 2 })
+   428→   428→      .notNull()
+   429→   429→      .default("0"),
+   430→   430→    lineTotal: decimal("line_total", { precision: 18, scale: 2 })
+   431→   431→      .notNull()
+   432→   432→      .default("0"),
+   433→   433→  },
+   434→   434→  (t) => ({
+   435→   435→    orderIdx: index("order_items_order_id_idx").on(t.orderId),
+   436→   436→    variantIdx: index("order_items_variant_id_idx").on(t.variantId),
+   437→   437→  }),
+   438→   438→);
+   439→   439→
+   440→   440→/* ------------------------------------------------------------------ */
+   441→   441→/* Uploaded files                                                     */
+   442→   442→/* ------------------------------------------------------------------ */
+   443→   443→export const uploadedFiles = pgTable("uploaded_files", {
+   444→   444→  id: text("id").primaryKey(),
+   445→   445→  filename: text("filename").notNull(),
+   446→   446→  url: text("url").notNull(),
+   447→   447→  mimeType: text("mime_type"),
+   448→   448→  size: integer("size").notNull().default(0),
+   449→   449→  category: text("category").notNull().default("general"),
+   450→   450→  altText: text("alt_text"),
+   451→   451→  createdAt: timestamp("created_at", { withTimezone: true })
+   452→   452→    .notNull()
+   453→   453→    .defaultNow(),
+   454→   454→});
+   455→   455→
+   456→   456→/* ------------------------------------------------------------------ */
+   457→   457→/* Quote requests (lead capture)                                      */
+   458→   458→/* ------------------------------------------------------------------ */
+   459→   459→export const quoteRequests = pgTable(
+   460→   460→  "quote_requests",
+   461→   461→  {
+   462→   462→    id: text("id").primaryKey(),
+   463→   463→    userId: text("user_id").references(() => users.id, {
+   464→   464→      onDelete: "set null",
+   465→   465→    }),
+   466→   466→    name: text("name").notNull(),
+   467→   467→    phone: text("phone").notNull(),
+   468→   468→    email: text("email"),
+   469→   469→    company: text("company"),
+   470→   470→    message: text("message"),
+   471→   471→    status: text("status", {
+   472→   472→      enum: ["new", "in_review", "quoted", "rejected", "closed"],
+   473→   473→    })
+   474→   474→      .notNull()
+   475→   475→      .default("new"),
+   476→   476→    createdAt: timestamp("created_at", { withTimezone: true })
+   477→   477→      .notNull()
+   478→   478→      .defaultNow(),
+   479→   479→  },
+   480→   480→);
+   481→   481→
+   482→   482→/* ------------------------------------------------------------------ */
+   483→   483→/* SMS providers                                                      */
+   484→   484→/* ------------------------------------------------------------------ */
+   485→   485→export const smsProviders = pgTable(
+   486→   486→  "sms_providers",
+   487→   487→  {
+   488→   488→    id: text("id").primaryKey(),
+   489→   489→    slug: text("slug").notNull(),
+   490→   490→    name: text("name").notNull(),
+   491→   491→    apiKey: text("api_key"),
+   492→   492→    senderNumber: text("sender_number"),
+   493→   493→    isActive: boolean("is_active").notNull().default(false),
+   494→   494→    config: jsonb("config").notNull().default({} as Record<string, unknown>),
+   495→   495→  },
+   496→   496→  (t) => ({
+   497→   497→    slugIdx: uniqueIndex("sms_providers_slug_idx").on(t.slug),
+   498→   498→  }),
+   499→   499→);
+   500→   500→
+   501→   501→/* ------------------------------------------------------------------ */
+   502→   502→/* AI price update jobs (bulk admin upload)                           */
+   503→   503→/* ------------------------------------------------------------------ */
+   504→   504→export const aiPriceUpdateJobs = pgTable("ai_price_update_jobs", {
+   505→   505→  id: text("id").primaryKey(),
+   506→   506→  filename: text("filename").notNull(),
+   507→   507→  mode: text("mode").notNull().default("manual"),
+   508→   508→  totalRows: integer("total_rows").notNull().default(0),
+   509→   509→  matchedRows: integer("matched_rows").notNull().default(0),
+   510→   510→  updatedRows: integer("updated_rows").notNull().default(0),
+   511→   511→  errorRows: integer("error_rows").notNull().default(0),
+   512→   512→  report: jsonb("report").notNull().default({} as Record<string, unknown>),
+   513→   513→  createdAt: timestamp("created_at", { withTimezone: true })
+   514→   514→    .notNull()
+   515→   515→    .defaultNow(),
+   516→   516→});
+   517→   517→
+   518→   518→/* ------------------------------------------------------------------ */
+   519→   519→/* OTP codes                                                          */
+   520→   520→/* ------------------------------------------------------------------ */
+   521→   521→export const otpCodes = pgTable(
+   522→   522→  "otp_codes",
+   523→   523→  {
+   524→   524→    id: text("id").primaryKey(),
+   525→   525→    channel: text("channel", { enum: ["sms", "email"] })
+   526→   526→      .notNull()
+   527→   527→      .default("sms"),
+   528→   528→    destination: text("destination").notNull(),
+   529→   529→    code: text("code"),
+   530→   530→    codeHash: text("code_hash").notNull(),
+   531→   531→    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+   532→   532→    used: boolean("used").notNull().default(false),
+   533→   533→    attempts: integer("attempts").notNull().default(0),
+   534→   534→    createdAt: timestamp("created_at", { withTimezone: true })
+   535→   535→      .notNull()
+   536→   536→      .defaultNow(),
+   537→   537→  },
+   538→   538→  (t) => ({
+   539→   539→    destIdx: index("otp_codes_destination_idx").on(t.destination),
+   540→   540→  }),
+   541→   541→);
+   542→   542→
+   543→   543→/* ------------------------------------------------------------------ */
+   544→   544→/* Chat (AI assistant)                                                */
+   545→   545→/* ------------------------------------------------------------------ */
+   546→   546→export const chatSessions = pgTable(
+   547→   547→  "chat_sessions",
+   548→   548→  {
+   549→   549→    id: text("id").primaryKey(),
+   550→   550→    sessionToken: text("session_token").notNull(),
+   551→   551→    userId: text("user_id").references(() => users.id, {
+   552→   552→      onDelete: "set null",
+   553→   553→    }),
+   554→   554→    status: text("status", {
+   555→   555→      enum: ["active", "closed", "archived"],
+   556→   556→    })
+   557→   557→      .notNull()
+   558→   558→      .default("active"),
+   559→   559→    createdAt: timestamp("created_at", { withTimezone: true })
+   560→   560→      .notNull()
+   561→   561→      .defaultNow(),
+   562→   562→    updatedAt: timestamp("updated_at", { withTimezone: true })
+   563→   563→      .notNull()
+   564→   564→      .defaultNow(),
+   565→   565→  },
+   566→   566→  (t) => ({
+   567→   567→    sessionIdx: uniqueIndex("chat_sessions_session_token_idx").on(
+   568→   568→      t.sessionToken,
+   569→   569→    ),
+   570→   570→  }),
+   571→   571→);
+   572→   572→
+   573→   573→export const chatMessages = pgTable(
+   574→   574→  "chat_messages",
+   575→   575→  {
+   576→   576→    id: text("id").primaryKey(),
+   577→   577→    sessionId: text("session_id")
+   578→   578→      .notNull()
+   579→   579→      .references(() => chatSessions.id, { onDelete: "cascade" }),
+   580→   580→    role: text("role", {
+   581→   581→      enum: ["user", "assistant", "system"],
+   582→   582→    }).notNull(),
+   583→   583→    content: text("content").notNull(),
+   584→   584→    imageUrl: text("image_url"),
+   585→   585→    productMatches: jsonb("product_matches").notNull().default(
+   586→   586→      [] as Array<Record<string, unknown>>,
+   587→   587→    ),
+   588→   588→    createdAt: timestamp("created_at", { withTimezone: true })
+   589→   589→      .notNull()
+   590→   590→      .defaultNow(),
+   591→   591→  },
+   592→   592→  (t) => ({
+   593→   593→    sessionIdx: index("chat_messages_session_id_idx").on(t.sessionId),
+   594→   594→  }),
+   595→   595→);
+   596→   596→
+   597→   597→/* ------------------------------------------------------------------ */
+   598→   598→/* AI providers + feature → provider mapping                          */
+   599→   599→/* ------------------------------------------------------------------ */
+   600→   600→export const aiProviders = pgTable(
+   601→   601→  "ai_providers",
+   602→   602→  {
+   603→   603→    id: text("id").primaryKey(),
+   604→   604→    slug: text("slug").notNull(),
+   605→   605→    name: text("name").notNull(),
+   606→   606→    type: text("type", {
+   607→   607→      enum: ["openai", "anthropic", "gemini", "zai", "ollama", "custom"],
+   608→   608→    }).notNull(),
+   609→   609→    apiKey: text("api_key"),
+   610→   610→    apiEndpoint: text("api_endpoint"),
+   611→   611→    modelName: text("model_name"),
+   612→   612→    isActive: boolean("is_active").notNull().default(true),
+   613→   613→    isDefault: boolean("is_default").notNull().default(false),
+   614→   614→    config: jsonb("config").notNull().default({} as Record<string, unknown>),
+   615→   615→    createdAt: timestamp("created_at", { withTimezone: true })
+   616→   616→      .notNull()
+   617→   617→      .defaultNow(),
+   618→   618→  },
+   619→   619→  (t) => ({
+   620→   620→    slugIdx: uniqueIndex("ai_providers_slug_idx").on(t.slug),
+   621→   621→  }),
+   622→   622→);
+   623→   623→
+   624→   624→export const aiFeatureProviders = pgTable(
+   625→   625→  "ai_feature_providers",
+   626→   626→  {
+   627→   627→    id: text("id").primaryKey(),
+   628→   628→    feature: text("feature").notNull(),
+   629→   629→    providerId: text("provider_id")
+   630→   630→      .notNull()
+   631→   631→      .references(() => aiProviders.id, { onDelete: "cascade" }),
+   632→   632→    createdAt: timestamp("created_at", { withTimezone: true })
+   633→   633→      .notNull()
+   634→   634→      .defaultNow(),
+   635→   635→  },
+   636→   636→  (t) => ({
+   637→   637→    featureIdx: uniqueIndex("ai_feature_providers_feature_idx").on(t.feature),
+   638→   638→  }),
+   639→   639→);
+   640→   640→
+   641→   641→/* ------------------------------------------------------------------ */
+   642→   642→/* Types — Select (read) and Insert (write) variants for every table  */
+   643→   643→/* ------------------------------------------------------------------ */
+   644→   644→export type AdminUser = typeof adminUsers.$inferSelect;
+   645→   645→export type NewAdminUser = typeof adminUsers.$inferInsert;
+   646→   646→
+   647→   647→export type SiteSetting = typeof siteSettings.$inferSelect;
+   648→   648→export type NewSiteSetting = typeof siteSettings.$inferInsert;
+   649→   649→
+   650→   650→export type ColorPalette = typeof colorPalettes.$inferSelect;
+   651→   651→export type NewColorPalette = typeof colorPalettes.$inferInsert;
+   652→   652→
+   653→   653→export type Category = typeof categories.$inferSelect;
+   654→   654→export type NewCategory = typeof categories.$inferInsert;
+   655→   655→
+   656→   656→export type Unit = typeof units.$inferSelect;
+   657→   657→export type NewUnit = typeof units.$inferInsert;
+   658→   658→
+   659→   659→export type Product = typeof products.$inferSelect;
+   660→   660→export type NewProduct = typeof products.$inferInsert;
+   661→   661→
+   662→   662→export type ProductVariant = typeof productVariants.$inferSelect;
+   663→   663→export type NewProductVariant = typeof productVariants.$inferInsert;
+   664→   664→
+   665→   665→export type Cart = typeof carts.$inferSelect;
+   666→   666→export type NewCart = typeof carts.$inferInsert;
+   667→   667→
+   668→   668→export type CartItem = typeof cartItems.$inferSelect;
+   669→   669→export type NewCartItem = typeof cartItems.$inferInsert;
+   670→   670→
+   671→   671→export type WishlistItem = typeof wishlistItems.$inferSelect;
+   672→   672→export type NewWishlistItem = typeof wishlistItems.$inferInsert;
+   673→   673→
+   674→   674→export type LandingSlide = typeof landingSlides.$inferSelect;
+   675→   675→export type NewLandingSlide = typeof landingSlides.$inferInsert;
+   676→   676→
+   677→   677→export type LandingFeature = typeof landingFeatures.$inferSelect;
+   678→   678→export type NewLandingFeature = typeof landingFeatures.$inferInsert;
+   679→   679→
+   680→   680→export type User = typeof users.$inferSelect;
+   681→   681→export type NewUser = typeof users.$inferInsert;
+   682→   682→
+   683→   683→export type UserAddress = typeof userAddresses.$inferSelect;
+   684→   684→export type NewUserAddress = typeof userAddresses.$inferInsert;
+   685→   685→
+   686→   686→export type Order = typeof orders.$inferSelect;
+   687→   687→export type NewOrder = typeof orders.$inferInsert;
+   688→   688→
+   689→   689→export type OrderItem = typeof orderItems.$inferSelect;
+   690→   690→export type NewOrderItem = typeof orderItems.$inferInsert;
+   691→   691→
+   692→   692→export type UploadedFile = typeof uploadedFiles.$inferSelect;
+   693→   693→export type NewUploadedFile = typeof uploadedFiles.$inferInsert;
+   694→   694→
+   695→   695→export type QuoteRequest = typeof quoteRequests.$inferSelect;
+   696→   696→export type NewQuoteRequest = typeof quoteRequests.$inferInsert;
+   697→   697→
+   698→   698→export type SmsProvider = typeof smsProviders.$inferSelect;
+   699→   699→export type NewSmsProvider = typeof smsProviders.$inferInsert;
+   700→   700→
+   701→   701→export type AiPriceUpdateJob = typeof aiPriceUpdateJobs.$inferSelect;
+   702→   702→export type NewAiPriceUpdateJob = typeof aiPriceUpdateJobs.$inferInsert;
+   703→   703→
+   704→   704→export type OtpCode = typeof otpCodes.$inferSelect;
+   705→   705→export type NewOtpCode = typeof otpCodes.$inferInsert;
+   706→   706→
+   707→   707→export type ChatSession = typeof chatSessions.$inferSelect;
+   708→   708→export type NewChatSession = typeof chatSessions.$inferInsert;
+   709→   709→
+   710→   710→export type ChatMessage = typeof chatMessages.$inferSelect;
+   711→   711→export type NewChatMessage = typeof chatMessages.$inferInsert;
+   712→   712→
+   713→   713→export type AiProvider = typeof aiProviders.$inferSelect;
+   714→   714→export type NewAiProvider = typeof aiProviders.$inferInsert;
+   715→   715→
+   716→   716→export type AiFeatureProvider = typeof aiFeatureProviders.$inferSelect;
+   717→   717→export type NewAiFeatureProvider = typeof aiFeatureProviders.$inferInsert;
+   718→   718→
+   719→   719→/* ------------------------------------------------------------------ */
+   720→   720→/* Schema map — single source of truth passed to drizzle()            */
+   721→   721→/* ------------------------------------------------------------------ */
+   722→   722→export const schema = {
+   723→   723→  adminUsers,
+   724→   724→  siteSettings,
+   725→   725→  colorPalettes,
+   726→   726→  categories,
+   727→   727→  units,
+   728→   728→  products,
+   729→   729→  productVariants,
+   730→   730→  carts,
+   731→   731→  cartItems,
+   732→   732→  wishlistItems,
+   733→   733→  landingSlides,
+   734→   734→  landingFeatures,
+   735→   735→  users,
+   736→   736→  userAddresses,
+   737→   737→  orders,
+   738→   738→  orderItems,
+   739→   739→  uploadedFiles,
+   740→   740→  quoteRequests,
+   741→   741→  smsProviders,
+   742→   742→  aiPriceUpdateJobs,
+   743→   743→  otpCodes,
+   744→   744→  chatSessions,
+   745→   745→  chatMessages,
+   746→   746→  aiProviders,
+   747→   747→  aiFeatureProviders,
+   748→   748→};
+   749→   749→
+   750→   750→// varchar re-export kept for downstream migrations
+   751→   751→export { varchar };
+   752→   752→

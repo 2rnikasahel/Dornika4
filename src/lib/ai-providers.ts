@@ -61,6 +61,14 @@ export async function listAiProviders(): Promise<AiProviderRow[]> {
   return rows;
 }
 
+/**
+ * Alias for `listAiProviders()` — preferred name for new callers.
+ * Returns every AI provider row regardless of `isActive` status.
+ */
+export async function getAllProviders(): Promise<AiProviderRow[]> {
+  return listAiProviders();
+}
+
 export async function getAiProviderBySlug(
   slug: string,
 ): Promise<AiProviderRow | null> {
@@ -200,7 +208,7 @@ export async function listFeatureMappings(): Promise<
 }
 
 /* ------------------------------------------------------------------ */
-/* Built-in feature list                                               */
+/* Built-in feature list + labels                                      */
 /* ------------------------------------------------------------------ */
 
 export const AI_FEATURES = [
@@ -217,3 +225,30 @@ export const AI_FEATURES = [
     description: "استخراج محصول از کاتالوگ PDF",
   },
 ] as const;
+
+/**
+ * Map of feature slug → localized label. Useful for admin tables that
+ * need to render a row per feature without iterating `AI_FEATURES`.
+ */
+export const featureLabels: Record<string, string> = AI_FEATURES.reduce(
+  (acc, f) => {
+    acc[f.slug] = f.label;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+/**
+ * Default provider slug used for each feature when no explicit
+ * feature→provider mapping exists in the DB. Used as a hint by the
+ * admin UI and as the ultimate fallback in `getProviderForFeature`.
+ *
+ * `null` means "no built-in default — fall back to the row marked
+ * `isDefault=true` in the DB".
+ */
+export const defaultProviders: Record<string, string | null> = {
+  chat: "zai",
+  vision: "zai",
+  "price-update": "zai",
+  "pdf-import": "zai",
+};

@@ -76,10 +76,12 @@ export async function searchProducts(
       slug: products.slug,
       title: products.title,
       subtitle: products.subtitle,
+      description: products.description,
       coverImage: products.coverImage,
       images: products.images,
       categoryId: products.categoryId,
       categoryTitle: categories.title,
+      categorySlug: categories.slug,
       createdAt: products.createdAt,
       sortOrder: products.sortOrder,
     })
@@ -96,10 +98,12 @@ export async function searchProducts(
     slug: string;
     title: string;
     subtitle: string | null;
+    description: string | null;
     coverImage: string | null;
     images: unknown;
     categoryId: string | null;
     categoryTitle: string | null;
+    categorySlug: string | null;
     createdAt: Date;
     sortOrder: number;
   }>;
@@ -110,12 +114,14 @@ export async function searchProducts(
     ? ((await db
         .select({
           productId: productVariants.productId,
+          id: productVariants.id,
           price: productVariants.price,
           stock: productVariants.stock,
         })
         .from(productVariants)
         .where(eq(productVariants.isActive, true))) as Array<{
         productId: string;
+        id: string;
         price: string;
         stock: number;
       }>)
@@ -123,19 +129,28 @@ export async function searchProducts(
 
   const byProduct = new Map<
     string,
-    { minPrice: number; inStock: boolean }
+    {
+      minPrice: number;
+      inStock: boolean;
+      firstVariantId: string | null;
+      variantCount: number;
+    }
   >();
   for (const v of variantRows) {
+    if (!ids.includes(v.productId)) continue;
     const price = Number(v.price) || 0;
     const prev = byProduct.get(v.productId);
     if (!prev) {
       byProduct.set(v.productId, {
         minPrice: price,
         inStock: v.stock > 0,
+        firstVariantId: v.id,
+        variantCount: 1,
       });
     } else {
       prev.minPrice = Math.min(prev.minPrice, price);
       prev.inStock = prev.inStock || v.stock > 0;
+      prev.variantCount += 1;
     }
   }
 
@@ -149,12 +164,17 @@ export async function searchProducts(
       slug: r.slug,
       title: r.title,
       subtitle: r.subtitle,
+      description: r.description,
       coverImage: r.coverImage || (images[0] ?? null),
       images,
       categoryId: r.categoryId,
       categoryTitle: r.categoryTitle,
+      categorySlug: r.categorySlug,
       minPrice: meta ? meta.minPrice : null,
       inStock: meta ? meta.inStock : false,
+      firstVariantId: meta ? meta.firstVariantId : null,
+      variantCount: meta ? meta.variantCount : 0,
+      variants: [],
     };
   });
 

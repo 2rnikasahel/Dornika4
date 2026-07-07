@@ -1,10 +1,27 @@
 /**
  * Commerce helpers for "درنیکا ساحل" (Dornika Sahel).
  *
- * - Session-based cart & wishlist (anonymous users supported)
- * - Cookie-backed session token (read-only on the server; written via
- *   the `/api/session/init` route handler on first visit)
+ * - Session-based cart & wishlist (anonymous visitors supported)
+ * - Cookie-backed session token (read on the server, written by the
+ *   `/api/session/init` route handler on first visit, or by any route
+ *   handler that needs to mint a fresh cookie via `resolveSessionCookieOptions`)
  * - Server-side data fetching for SSR layout (counts, cart page data)
+ *
+ * Session-token semantics
+ * -----------------------
+ * `readSessionToken()` ALWAYS returns a non-empty string: if the
+ * `dornika_session` cookie is present, that value is used; otherwise a
+ * fresh ephemeral token is generated (UUID-based, prefixed `sess_`).
+ *
+ * IMPORTANT: the freshly generated token is NOT persisted to the cookie
+ * by this function — `cookies()` is read-only in Server Components.
+ * Persistence happens via:
+ *   • the `<SessionInitializer>` component (calls `/api/session/init`
+ *     on first visit when `generated=true` is passed from the layout)
+ *   • route handlers calling `ensureSessionToken()` in `cart-actions.ts`
+ *     / `ensureChatSession()` in `chat-actions.ts`, which use
+ *     `readOrGenerateSessionToken()` so they can detect the `generated`
+ *     flag and write the cookie themselves.
  */
 
 import { cookies } from "next/headers";
@@ -25,8 +42,10 @@ import {
   isPreviewEnvironment,
 } from "./cookie-config";
 
+/** Cookie name that stores the anonymous session token. */
 export const SESSION_COOKIE = "dornika_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+/** Session token TTL: 30 days. */
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /* ------------------------------------------------------------------ */
 /* Session token                                                       */
@@ -59,35 +78,34 @@ export function generateSessionToken(): string {
 }
 
 /**
- * Read the session token from the request cookie. If the cookie is
- * missing or empty, returns `null` — the caller can then fall back to
- * a fresh ephemeral token via `generateSessionToken()` and ask the
- * client to mint a real cookie by calling `/api/session/init`.
+ * Read the session token from the request cookie. Always returns a
+ * non-empty string — when the cookie is missing or empty, a fresh
+ * ephemeral token is generated (NOT persisted; see module docstring).
  *
- * NOTE: cookies() can only be *read* in Server Components; writing
- * requires a Route Handler or Server Action, so this function is
- * read-only by design.
+ * Use `readOrGenerateSessionToken()` instead when you need to know
+ * whether the token was newly generated (e.g. to decide whether to
+ * write the cookie from a route handler).
  */
-export async function readSessionToken(): Promise<string | null> {
-  const store = await cookies();
-  const existing = store.get(SESSION_COOKIE)?.value;
-  if (existing && existing.trim().length > 0) return existing;
-  return null;
+export async function readSessionToken(): Promise<string> {
+  const { token } = await readOrGenerateSessionToken();
+  return token;
 }
 
 /**
- * Server-component friendly variant: always returns a usable token.
- * If the cookie exists, returns it; otherwise generates a fresh one
- * (without persisting it). Pass `wasGenerated = true` to the client
- * via the `<SessionInitializer>` component to actually mint the
- * cookie on first visit.
+ * Read the session token from the cookie. Returns `{ token, generated }`
+ * where `generated` is `true` when the cookie was missing and a fresh
+ * token had to be generated. Route handlers can use `generated` to
+ * decide whether to call `cookies().set(...)` to persist the new token.
  */
 export async function readOrGenerateSessionToken(): Promise<{
   token: string;
   generated: boolean;
 }> {
-  const existing = await readSessionToken();
-  if (existing) return { token: existing, generated: false };
+  const store = await cookies();
+  const existing = store.get(SESSION_COOKIE)?.value;
+  if (existing && existing.trim().length > 0) {
+    return { token: existing, generated: false };
+  }
   return { token: generateSessionToken(), generated: true };
 }
 
@@ -133,7 +151,10 @@ async function findCartRow(sessionToken: string): Promise<string | null> {
 
 /**
  * Returns the full cart page data — items enriched with product
- * title / cover image / slug, plus subtotal and quantity count.
+ * title / cover image / slug, plus subtotal and total quantity count.
+ *
+ * When `sessionToken` is null/empty (e.g. anonymous first visit before
+ * the cookie has been minted), returns an empty cart.
  */
 export async function getCartPageData(
   sessionToken: string | null,
@@ -220,6 +241,11 @@ export async function getCartPageData(
 /**
  * Returns the array of product IDs currently in the wishlist for the
  * given session token.
+ *
+ * NOTE: although the original spec mentioned `number[]`, the
+ * `products.id` column is `text` (IDs look like `prod_<uuid>`), so
+ * the IDs are returned as strings. All call-sites compare with
+ * `String(productId)`, which works correctly with `string[]`.
  */
 export async function getWishlistProductIds(
   sessionToken: string | null,

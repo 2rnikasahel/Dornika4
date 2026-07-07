@@ -1,7 +1,7 @@
 import "dotenv/config";
 import crypto from "node:crypto";
-import { getDb } from "../src/db/index.ts";
-import * as schema from "../src/db/schema.ts";
+import { getDb } from "../src/db/index";
+import * as schema from "../src/db/schema";
 import { eq } from "drizzle-orm";
 
 const db = await getDb();

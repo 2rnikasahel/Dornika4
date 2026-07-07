@@ -1,14 +1,25 @@
 /**
  * Authentication system for "درنیکا ساحل" (Dornika Sahel).
  *
- * - PBKDF2 with SHA-512 for password hashing
+ * - PBKDF2 with SHA-512 (node:crypto, 10 000 iterations) for password hashing
  * - HMAC-SHA256 stateless auth tokens (signed JWT-like envelopes)
  * - Cookie-based sessions
  *
- * Tokens have the shape:  base64url(payload).base64url(signature)
- * where payload = JSON.stringify({ uid, id, role, iat, exp }).
+ * Password hash format:  pbkdf2$<iterations>$<saltB64>$<hashB64>
+ * Token format:          <payloadB64url>.<signatureB64url>
+ *   where payload = JSON.stringify({ uid, id, role, iat, exp }).
+ *
+ * The iteration count is stored *in the hash*, so old hashes (generated
+ * with a different iteration count) still verify correctly — the verify
+ * path reads the iteration count from the stored hash.
  */
 
+import {
+  randomBytes,
+  pbkdf2Sync,
+  createHmac,
+  timingSafeEqual,
+} from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { eq, or } from "drizzle-orm";
 
@@ -21,16 +32,24 @@ import {
 } from "./cookie-config";
 
 /* ------------------------------------------------------------------ */
-/* Constants                                                          */
+/* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
-export const USER_TOKEN_COOKIE = "dornika_token";
+/** Name of the browser cookie that stores the signed auth token. */
+export const USER_TOKEN_COOKIE = "dornika_user_token";
 
-const PBKDF2_ITERATIONS = 120_000;
+/** PBKDF2 iteration count used when hashing *new* passwords. */
+const PBKDF2_ITERATIONS = 10_000;
+/** Salt length in bytes (128-bit salt). */
 const SALT_BYTES = 16;
-const KEY_LENGTH = 64; // bytes (matches SHA-512 digest length)
+/** Derived key length in bytes (SHA-512 produces a 64-byte digest). */
+const KEY_LENGTH = 64;
+/** Hash digest algorithm (must match the verify path). */
+const DIGEST = "sha512";
+/** Base64 is used for salt + hash encoding inside the stored string. */
 const HASH_ENCODING: BufferEncoding = "base64";
-const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+/** Token TTL: 7 days in seconds. */
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 function getAuthSecret(): string {
   const secret =
@@ -42,43 +61,41 @@ function getAuthSecret(): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Password hashing (PBKDF2 / SHA-512)                                */
+/* Password hashing (PBKDF2 / SHA-512 via node:crypto)                */
 /* ------------------------------------------------------------------ */
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = new Uint8Array(SALT_BYTES);
-  crypto.getRandomValues(salt);
-
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits"],
+/**
+ * Hash a plaintext password using PBKDF2 (SHA-512, 10 000 iterations).
+ * Returns a self-describing string of the form
+ *   `pbkdf2$<iterations>$<saltB64>$<hashB64>`.
+ */
+export function hashPassword(password: string): string {
+  if (typeof password !== "string" || password.length === 0) {
+    throw new Error("hashPassword: password must be a non-empty string");
+  }
+  const salt = randomBytes(SALT_BYTES);
+  const derived = pbkdf2Sync(
+    Buffer.from(password, "utf8"),
+    salt,
+    PBKDF2_ITERATIONS,
+    KEY_LENGTH,
+    DIGEST,
   );
-
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      hash: "SHA-512",
-      salt: salt as unknown as BufferSource,
-      iterations: PBKDF2_ITERATIONS,
-    },
-    keyMaterial,
-    KEY_LENGTH * 8,
-  );
-
-  const saltB64 = Buffer.from(salt).toString(HASH_ENCODING);
-  const hashB64 = Buffer.from(derivedBits).toString(HASH_ENCODING);
-
+  const saltB64 = salt.toString(HASH_ENCODING);
+  const hashB64 = derived.toString(HASH_ENCODING);
   return `pbkdf2$${PBKDF2_ITERATIONS}$${saltB64}$${hashB64}`;
 }
 
-export async function verifyPassword(
-  password: string,
-  storedHash: string,
-): Promise<boolean> {
-  if (!storedHash) return false;
+/**
+ * Verify a plaintext password against a stored PBKDF2 hash. The iteration
+ * count is read from the stored hash so legacy hashes (generated with a
+ * different iteration count) still verify correctly.
+ *
+ * Returns `false` for any malformed input or non-matching password —
+ * never throws for bad input.
+ */
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!password || !storedHash) return false;
 
   const parts = storedHash.split("$");
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
@@ -86,94 +103,88 @@ export async function verifyPassword(
   const iterations = Number(parts[1]);
   const saltB64 = parts[2];
   const expectedHashB64 = parts[3];
-
   if (!Number.isFinite(iterations) || iterations <= 0) return false;
+  if (!saltB64 || !expectedHashB64) return false;
 
-  let salt: Uint8Array;
-  let expectedHash: Uint8Array;
+  let salt: Buffer;
+  let expectedHash: Buffer;
   try {
-    salt = new Uint8Array(Buffer.from(saltB64, HASH_ENCODING));
-    expectedHash = new Uint8Array(Buffer.from(expectedHashB64, HASH_ENCODING));
+    salt = Buffer.from(saltB64, HASH_ENCODING);
+    expectedHash = Buffer.from(expectedHashB64, HASH_ENCODING);
   } catch {
     return false;
   }
   if (salt.length === 0 || expectedHash.length === 0) return false;
 
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits"],
+  const derived = pbkdf2Sync(
+    Buffer.from(password, "utf8"),
+    salt,
+    iterations,
+    expectedHash.length,
+    DIGEST,
   );
 
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      hash: "SHA-512",
-      salt: salt as unknown as BufferSource,
-      iterations,
-    },
-    keyMaterial,
-    expectedHash.length * 8,
-  );
-
-  const derived = new Uint8Array(derivedBits);
-  return constantTimeEqual(derived, expectedHash);
-}
-
-function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
+  // Constant-time comparison — never short-circuit on first mismatch.
+  if (derived.length !== expectedHash.length) return false;
+  try {
+    return timingSafeEqual(derived, expectedHash);
+  } catch {
+    return false;
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/* Auth tokens (HMAC-SHA256)                                          */
+/* Auth tokens (HMAC-SHA256 via node:crypto)                          */
 /* ------------------------------------------------------------------ */
 
 export interface AuthTokenPayload {
-  uid: string; // user id
-  id: string; // login identifier (username/email/phone)
+  /** User id (matches `users.id`). */
+  uid: string;
+  /** Login identifier used (username / email / phone). */
+  id: string;
+  /** Role at the moment of token issuance. */
   role: string;
-  iat: number; // issued at (seconds)
-  exp: number; // expires at (seconds)
+  /** Issued-at timestamp (seconds since epoch). */
+  iat: number;
+  /** Expiry timestamp (seconds since epoch). */
+  exp: number;
 }
 
 function base64UrlEncode(input: Buffer | Uint8Array): string {
-  const b64 = Buffer.from(input as Uint8Array).toString("base64");
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(input as Uint8Array)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
-function base64UrlDecode(input: string): Uint8Array {
+function base64UrlDecode(input: string): Buffer {
   const padded =
     input.replace(/-/g, "+").replace(/_/g, "/") +
     "=".repeat((4 - (input.length % 4)) % 4);
-  return new Uint8Array(Buffer.from(padded, "base64"));
+  return Buffer.from(padded, "base64");
 }
 
-async function hmacSha256(data: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(getAuthSecret()),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(data),
-  );
-  return new Uint8Array(sig);
+/**
+ * Compute the HMAC-SHA256 signature of `data` using the configured
+ * `AUTH_SECRET`. Returns a raw byte buffer.
+ */
+function hmacSha256(data: string): Buffer {
+  return createHmac("sha256", getAuthSecret()).update(data, "utf8").digest();
 }
 
-export async function createAuthToken(
+/**
+ * Mint a new signed auth token for the given user.
+ *
+ * The token is `base64url(payload).base64url(signature)` where
+ * `payload = JSON.stringify({ uid, id, role, iat, exp })` and the
+ * signature is HMAC-SHA256(payloadB64url, AUTH_SECRET).
+ */
+export function createAuthToken(
   userId: string,
   identifier: string,
   role: string,
-): Promise<string> {
+): string {
   const now = Math.floor(Date.now() / 1000);
   const payload: AuthTokenPayload = {
     uid: userId,
@@ -184,38 +195,47 @@ export async function createAuthToken(
   };
 
   const payloadJson = JSON.stringify(payload);
-  const payloadB64 = base64UrlEncode(
-    new TextEncoder().encode(payloadJson),
-  );
-
-  const signature = await hmacSha256(payloadB64);
+  const payloadB64 = base64UrlEncode(Buffer.from(payloadJson, "utf8"));
+  const signature = hmacSha256(payloadB64);
   const sigB64 = base64UrlEncode(signature);
 
   return `${payloadB64}.${sigB64}`;
 }
 
-export async function verifyAuthToken(
-  token: string,
-): Promise<AuthTokenPayload | null> {
+/**
+ * Verify a signed auth token: validates the HMAC signature and checks
+ * the expiry. Returns the decoded payload on success, or `null` if the
+ * token is malformed, tampered with, or expired.
+ */
+export function verifyAuthToken(token: string): AuthTokenPayload | null {
   if (!token || typeof token !== "string") return null;
 
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
 
-  // Verify signature first.
-  const expectedSig = await hmacSha256(payloadB64);
-  let providedSig: Uint8Array;
+  // Verify signature first — if this fails, the payload is untrusted.
+  const expectedSig = hmacSha256(payloadB64);
+  let providedSig: Buffer;
   try {
     providedSig = base64UrlDecode(sigB64);
   } catch {
     return null;
   }
-  if (!constantTimeEqual(expectedSig, providedSig)) return null;
+  // `timingSafeEqual` throws when the buffers differ in length, so we
+  // guard with a length check first and then compare in constant time.
+  if (expectedSig.length !== providedSig.length) return null;
+  let sigOk = false;
+  try {
+    sigOk = timingSafeEqual(expectedSig, providedSig);
+  } catch {
+    sigOk = false;
+  }
+  if (!sigOk) return null;
 
   let payloadJson: string;
   try {
-    payloadJson = new TextDecoder().decode(base64UrlDecode(payloadB64));
+    payloadJson = base64UrlDecode(payloadB64).toString("utf8");
   } catch {
     return null;
   }
@@ -229,47 +249,55 @@ export async function verifyAuthToken(
 
   const now = Math.floor(Date.now() / 1000);
   if (typeof payload.exp !== "number" || payload.exp < now) return null;
+  if (!payload.uid || typeof payload.uid !== "string") return null;
 
   return payload;
 }
 
 /* ------------------------------------------------------------------ */
-/* User lookup                                                        */
+/* User lookup                                                         */
 /* ------------------------------------------------------------------ */
 
 /**
  * Find a user by any login identifier: username, email, or phone.
- * Returns the user row or null.
+ * Email matching is case-insensitive (lower-cased before compare).
+ *
+ * Returns the user row or `null` when no match is found.
  */
 export async function findUserByLoginIdentifier(
   identifier: string,
 ): Promise<(typeof users.$inferSelect) | null> {
   if (!identifier) return null;
   const normalized = identifier.trim();
+  if (!normalized) return null;
 
-  const rows = await db
-    .select()
-    .from(users)
-    .where(
-      or(
-        eq(users.username, normalized),
-        eq(users.email, normalized.toLowerCase()),
-        eq(users.phone, normalized),
-      ),
-    )
-    .limit(1);
+  try {
+    const rows = await db
+      .select()
+      .from(users)
+      .where(
+        or(
+          eq(users.username, normalized),
+          eq(users.email, normalized.toLowerCase()),
+          eq(users.phone, normalized),
+        ),
+      )
+      .limit(1);
 
-  const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-  return (row as typeof users.$inferSelect) ?? null;
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    return (row as typeof users.$inferSelect) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/* Current user / admin helpers                                       */
+/* Current user / admin helpers                                        */
 /* ------------------------------------------------------------------ */
 
 /**
  * Reads the auth cookie from the incoming request, verifies the token,
- * and returns the corresponding user row (or null when not logged in
+ * and returns the corresponding user row (or `null` when not logged in
  * or when the user has been deactivated).
  */
 export async function getCurrentUser(): Promise<
@@ -280,7 +308,7 @@ export async function getCurrentUser(): Promise<
     const token = store.get(USER_TOKEN_COOKIE)?.value;
     if (!token) return null;
 
-    const payload = await verifyAuthToken(token);
+    const payload = verifyAuthToken(token);
     if (!payload || !payload.uid) return null;
 
     const rows = await db
@@ -304,9 +332,11 @@ export async function getCurrentUser(): Promise<
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 
 /**
- * Returns the current user only if they hold an admin role.
- * Throws a Next.js-style error object the caller can forward when the
- * user is not authorized (so route handlers can return a clean 401/403).
+ * Returns the current user only if they hold an admin role
+ * (`admin` or `super_admin`). Throws an Error with `statusCode` set to
+ * 401 (when not logged in) or 403 (when logged in but not an admin) —
+ * route handlers can forward these to a clean JSON response via the
+ * `adminGuard` helper.
  */
 export async function requireAdmin(): Promise<
   (typeof users.$inferSelect) | never
@@ -330,12 +360,13 @@ export async function requireAdmin(): Promise<
 }
 
 /* ------------------------------------------------------------------ */
-/* Cookie helpers for setting auth tokens                             */
+/* Cookie helpers for setting auth tokens                              */
 /* ------------------------------------------------------------------ */
 
 /**
- * Returns cookie options appropriate for the current request environment
- * (localhost vs. preview gateway).
+ * Returns cookie options appropriate for the current request
+ * environment (localhost vs. preview gateway). The `maxAge` is set to
+ * the token TTL so the cookie lives as long as the token itself.
  */
 export async function resolveAuthCookieOptions() {
   const hdrs = await headers();

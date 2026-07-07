@@ -425,3 +425,54 @@ export async function sendOtp(input: SendOtpInput): Promise<SendOtpResult> {
   if (!provider) return { ok: false, error: `unknown provider ${row.slug}` };
   return provider.sendOtp(row, input);
 }
+
+/* ------------------------------------------------------------------ */
+/* Generic SMS (non-OTP) helper                                        */
+/* ------------------------------------------------------------------ */
+
+export interface SendSmsInput {
+  /** Phone number, e.g. 09123456789. */
+  receptor: string;
+  /** Plain text message body. */
+  message: string;
+}
+
+/**
+ * Send a generic (non-OTP) SMS via the active provider. Reuses the
+ * provider's `sendOtp` plumbing — each provider's HTTP call already
+ * accepts an arbitrary `message` string, so we just pass the caller's
+ * message verbatim and supply an empty code (which the default-message
+ * path would never reach because `message` is set).
+ *
+ * Behaviour in dev / no-provider mode mirrors `sendOtp`: logs to the
+ * console and returns `ok: true` so callers don't fail in sandboxes.
+ */
+export async function sendSms(input: SendSmsInput): Promise<SendOtpResult> {
+  if (!input?.receptor || !input?.message) {
+    return { ok: false, error: "receptor and message are required" };
+  }
+
+  if (process.env.SEND_OTP === "console" || process.env.NODE_ENV !== "production") {
+    console.info(`[sms][dev] SMS to ${input.receptor}: ${input.message}`);
+    return { ok: true, refId: "dev-console" };
+  }
+
+  const row = await getActiveSmsProviderRow();
+  if (!row) {
+    console.info(
+      `[sms][no-provider] SMS to ${input.receptor}: ${input.message}`,
+    );
+    return { ok: true, refId: "no-provider" };
+  }
+
+  const provider = SMS_BY_SLUG.get(row.slug);
+  if (!provider) return { ok: false, error: `unknown provider ${row.slug}` };
+
+  // Reuse the OTP plumbing — the `message` field takes precedence over
+  // the synthesized default, so passing an empty code is safe.
+  return provider.sendOtp(row, {
+    receptor: input.receptor,
+    code: "",
+    message: input.message,
+  });
+}
