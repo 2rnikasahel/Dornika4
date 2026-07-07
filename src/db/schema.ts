@@ -182,7 +182,7 @@ export const productVariants = pgTable(
   "product_variants",
   {
     id: serial("id").primaryKey(),
-    productId: text("product_id")
+    productId: integer("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     unitId: text("unit_id").references(() => units.id, {
@@ -235,10 +235,10 @@ export const cartItems = pgTable(
   "cart_items",
   {
     id: serial("id").primaryKey(),
-    cartId: text("cart_id")
+    cartId: integer("cart_id")
       .notNull()
       .references(() => carts.id, { onDelete: "cascade" }),
-    variantId: text("variant_id").references(() => productVariants.id, {
+    variantId: integer("variant_id").references(() => productVariants.id, {
       onDelete: "cascade",
     }),
     quantity: integer("quantity").notNull().default(1),
@@ -267,7 +267,7 @@ export const wishlistItems = pgTable(
   {
     id: serial("id").primaryKey(),
     sessionToken: text("session_token").notNull(),
-    productId: text("product_id").references(() => products.id, {
+    productId: integer("product_id").references(() => products.id, {
       onDelete: "cascade",
     }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -349,7 +349,7 @@ export const userAddresses = pgTable(
   "user_addresses",
   {
     id: serial("id").primaryKey(),
-    userId: text("user_id")
+    userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title"),
@@ -377,18 +377,20 @@ export const orders = pgTable(
   {
     id: serial("id").primaryKey(),
     orderNumber: text("order_number").notNull(),
-    userId: text("user_id").references(() => users.id, {
+    userId: integer("user_id").references(() => users.id, {
       onDelete: "set null",
     }),
     status: text("status", {
       enum: [
         "pending",
+        "pending_payment",
         "confirmed",
         "processing",
         "shipped",
         "delivered",
         "cancelled",
         "refunded",
+        "paid",
       ],
     })
       .notNull()
@@ -417,10 +419,10 @@ export const orderItems = pgTable(
   "order_items",
   {
     id: serial("id").primaryKey(),
-    orderId: text("order_id")
+    orderId: integer("order_id")
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
-    variantId: text("variant_id"),
+    variantId: integer("variant_id"),
     sku: text("sku"),
     productTitle: text("product_title").notNull(),
     variantTitle: text("variant_title"),
@@ -461,7 +463,7 @@ export const quoteRequests = pgTable(
   "quote_requests",
   {
     id: serial("id").primaryKey(),
-    userId: text("user_id").references(() => users.id, {
+    userId: integer("user_id").references(() => users.id, {
       onDelete: "set null",
     }),
     name: text("name").notNull(),
@@ -528,7 +530,7 @@ export const otpCodes = pgTable(
       .default("sms"),
     destination: text("destination").notNull(),
     code: text("code"),
-    codeHash: text("code_hash").notNull(),
+    codeHash: text("code_hash"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     used: boolean("used").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
@@ -549,7 +551,7 @@ export const chatSessions = pgTable(
   {
     id: serial("id").primaryKey(),
     sessionToken: text("session_token").notNull(),
-    userId: text("user_id").references(() => users.id, {
+    userId: integer("user_id").references(() => users.id, {
       onDelete: "set null",
     }),
     status: text("status", {
@@ -575,7 +577,7 @@ export const chatMessages = pgTable(
   "chat_messages",
   {
     id: serial("id").primaryKey(),
-    sessionId: text("session_id")
+    sessionId: integer("session_id")
       .notNull()
       .references(() => chatSessions.id, { onDelete: "cascade" }),
     role: text("role", {
@@ -627,7 +629,7 @@ export const aiFeatureProviders = pgTable(
   {
     id: serial("id").primaryKey(),
     feature: text("feature").notNull(),
-    providerId: text("provider_id")
+    providerId: integer("provider_id")
       .notNull()
       .references(() => aiProviders.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true })

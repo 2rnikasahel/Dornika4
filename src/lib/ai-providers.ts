@@ -24,7 +24,7 @@ export type AiProviderType =
   | "custom";
 
 export interface AiProviderRow {
-  id: string;
+  id: number;
   slug: string;
   name: string;
   type: AiProviderType;
@@ -87,7 +87,6 @@ export async function createAiProvider(
   const rows = (await db
     .insert(aiProviders)
     .values({
-      id,
       slug: input.slug,
       name: input.name,
       type: input.type,
@@ -181,19 +180,19 @@ export async function getProviderForFeature(
 
 export async function setProviderForFeature(
   feature: string,
-  providerId: string,
+  providerId: number,
 ): Promise<void> {
   // Delete any existing mapping for this feature, then insert the new one.
   await db.delete(aiFeatureProviders).where(eq(aiFeatureProviders.feature, feature));
   await db.insert(aiFeatureProviders).values({
-    id: `afp_${feature}_${Date.now()}`,
+    
     feature,
     providerId,
   });
 }
 
 export async function listFeatureMappings(): Promise<
-  Array<{ feature: string; providerId: string }>
+  Array<{ feature: string; providerId: number }>
 > {
   const rows = (await db
     .select({
@@ -202,7 +201,7 @@ export async function listFeatureMappings(): Promise<
     })
     .from(aiFeatureProviders)) as Array<{
     feature: string;
-    providerId: string;
+    providerId: number;
   }>;
   return rows;
 }

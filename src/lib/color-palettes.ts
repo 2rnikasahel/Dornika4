@@ -389,7 +389,7 @@ export async function setActivePalette(slug: string): Promise<boolean> {
         .where(eq(colorPalettes.id, existing[0].id));
     } else {
       await db.insert(colorPalettes).values({
-        id: `pal_${slug}_${Date.now()}`,
+        
         slug: preset.slug,
         name: preset.name,
         colors: preset.colors as unknown as Record<string, unknown>,

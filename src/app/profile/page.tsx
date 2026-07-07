@@ -16,7 +16,7 @@ export default async function ProfilePage() {
     <div className="min-h-screen px-4 pb-24 sm:px-6">
       <div className="mx-auto max-w-4xl">
         <div className="mb-8 flex items-center justify-between">
-          <div><h1 className="text-gradient-navy text-3xl font-black sm:text-4xl">پروفایل من</h1><p className="mt-2 text-sm text-charcoal-500">{user.name} — {user.role === "super_admin" ? "سوپر ادمین" : user.role === "admin" ? "مدیر" : user.role === "contractor" ? "پیمانکار" : "مشتری"}</p></div>
+          <div><h1 className="text-gradient-navy text-3xl font-black sm:text-4xl">پروفایل من</h1><p className="mt-2 text-sm text-charcoal-500">{user.name} — {user.role === "super_admin" ? "سوپر ادمین" : user.role === "admin" ? "مدیر" : user.role === "b2b" ? "پیمانکار" : "مشتری"}</p></div>
           <LogoutButton />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

@@ -232,7 +232,7 @@ export async function addItem(
       .where(eq(cartItems.id, existing[0].id));
   } else {
     await db.insert(cartItems).values({
-      id: `ci_${randomUUID().replace(/-/g, "")}`,
+      
       cartId,
       variantId: variant.id,
       quantity: qty,

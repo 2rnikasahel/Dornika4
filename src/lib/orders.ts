@@ -147,7 +147,7 @@ export async function createOrderFromCart(
   // Insert line items
   for (const li of lineItems) {
     await db.insert(orderItems).values({
-      id: `oi_${randomUUID().replace(/-/g, "")}`,
+      
       orderId,
       variantId: li.variantId,
       sku: li.sku,

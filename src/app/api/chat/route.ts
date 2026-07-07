@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     "assistant",
     reply,
     null,
-    products as Array<Record<string, unknown>>,
+    products as unknown as Array<Record<string, unknown>>,
   );
 
   return NextResponse.json({

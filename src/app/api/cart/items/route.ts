@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
     if (!v) return NextResponse.json({ ok: false, error: "تنوع یافت نشد." }, { status: 404 });
     const [p] = await db.select().from(products).where(eq(products.id, v.productId)).limit(1);
     if (!p) return NextResponse.json({ ok: false, error: "محصول یافت نشد." }, { status: 404 });
-    const [u] = v.unitId ? await db.select().from(units).where(eq(units.id, v.unitId)).limit(1) : [null];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [u]: any = v.unitId ? await db.select().from(units).where(eq(units.id, v.unitId as any)).limit(1) : [null];
     const [existing] = await db.select().from(cartItems).where(and(eq(cartItems.cartId, cart.id), eq(cartItems.variantId, variantId))).limit(1);
     if (existing) {
       await db.update(cartItems).set({ quantity: existing.quantity + qty }).where(eq(cartItems.id, existing.id));

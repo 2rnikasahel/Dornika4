@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     if (!channel || !destination || !code) return NextResponse.json({ ok: false, error: "کانال، مقصد و کد الزامی است." }, { status: 400 });
     if (code.length !== 6 || !/^\d{6}$/.test(code)) return NextResponse.json({ ok: false, error: "کد باید ۶ رقم باشد." }, { status: 400 });
     const now = new Date();
-    const [otp] = await db.select().from(otpCodes).where(and(eq(otpCodes.destination, destination), eq(otpCodes.channel, channel), eq(otpCodes.used, false), gt(otpCodes.expiresAt, now))).limit(1);
+    const [otp] = await db.select().from(otpCodes).where(and(eq(otpCodes.destination, destination), eq(otpCodes.channel, channel as "sms" | "email"), eq(otpCodes.used, false), gt(otpCodes.expiresAt, now))).limit(1);
     if (!otp) return NextResponse.json({ ok: false, error: "کد معتبر نیست یا منقضی شده است." }, { status: 401 });
     if (otp.attempts >= 5) { await db.update(otpCodes).set({ used: true }).where(eq(otpCodes.id, otp.id)); return NextResponse.json({ ok: false, error: "تعداد تلاش‌های ناموفق بیش از حد." }, { status: 429 }); }
     if (otp.code !== code) { await db.update(otpCodes).set({ attempts: otp.attempts + 1 }).where(eq(otpCodes.id, otp.id)); return NextResponse.json({ ok: false, error: "کد تایید اشتباه است." }, { status: 401 }); }

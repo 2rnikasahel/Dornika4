@@ -139,7 +139,7 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 
 export interface AuthTokenPayload {
   /** User id (matches `users.id`). */
-  uid: string;
+  uid: number | string;
   /** Login identifier used (username / email / phone). */
   id: string;
   /** Role at the moment of token issuance. */
@@ -181,7 +181,7 @@ function hmacSha256(data: string): Buffer {
  * signature is HMAC-SHA256(payloadB64url, AUTH_SECRET).
  */
 export function createAuthToken(
-  userId: string,
+  userId: number | string,
   identifier: string,
   role: string,
 ): string {

@@ -117,7 +117,7 @@ export async function persistMessage(
   productMatches?: Array<Record<string, unknown>>,
 ): Promise<void> {
   await db.insert(chatMessages).values({
-    id: `cm_${randomUUID().replace(/-/g, "")}`,
+    
     sessionId,
     role,
     content,

@@ -98,11 +98,11 @@ export function ColorPalettePanel({
               {/* Swatches */}
               <div className="flex h-10 w-full overflow-hidden rounded-lg">
                 {[
-                  p.colors.navy900,
-                  p.colors.navy800,
-                  p.colors.petrol500,
-                  p.colors.petrol300,
-                  p.colors.pearl100,
+                  p.colors.primary,
+                  p.colors.primary,
+                  p.colors.accent,
+                  p.colors.accent,
+                  p.colors.background,
                   p.colors.accent,
                 ].map((c, i) => (
                   <div
@@ -115,7 +115,7 @@ export function ColorPalettePanel({
               <div className="flex flex-col">
                 <span className="text-xs font-bold text-navy-900">{p.name}</span>
                 <span className="text-[10px] text-charcoal-400" dir="ltr">
-                  {p.nameEn}
+                  {p.name}
                 </span>
               </div>
               <span

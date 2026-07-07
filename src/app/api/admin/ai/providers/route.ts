@@ -111,7 +111,7 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
-      await setProviderForFeature(body.feature, body.providerId);
+      await setProviderForFeature(body.feature, Number(body.providerId));
       return NextResponse.json({ ok: true });
     }
 

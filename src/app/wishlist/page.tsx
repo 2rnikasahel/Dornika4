@@ -25,7 +25,7 @@ export default async function WishlistPage() {
                 <WishlistToggleButton productId={p.id} initialWishlisted={true} compact className="absolute end-3 top-3 z-20 bg-pearl-100/90 backdrop-blur-md" />
                 <Link href={`/shop/${p.slug}`} className="block">
                   {p.coverImage ? (<div className="aspect-[4/3] overflow-hidden bg-navy-900/5">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={p.coverImage} alt={p.title} className="size-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" /></div>) : (<div className="flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-navy-900/5 via-pearl-100 to-petrol-100"><Package className="size-16 text-navy-700/30" strokeWidth={1.2} /></div>)}
-                  <div className="p-5"><h3 className="text-sm font-bold text-navy-900 group-hover:text-petrol-700">{p.title}</h3><p className="mt-2 text-xs font-semibold text-petrol-700">از {formatRial(p.minPrice)}</p></div>
+                  <div className="p-5"><h3 className="text-sm font-bold text-navy-900 group-hover:text-petrol-700">{p.title}</h3><p className="mt-2 text-xs font-semibold text-petrol-700">از {formatRial(p.minPrice || "0")}</p></div>
                 </Link>
               </article>
             ))}

@@ -243,10 +243,7 @@ export function Navbar({
                   )}
                   <DropdownMenuSeparator />
                   <div className="px-2 py-1.5">
-                    <LogoutButton className="w-full justify-start px-0">
-                      <LogOut size={14} className="ml-2" />
-                      {t?.auth?.logout ?? "خروج"}
-                    </LogoutButton>
+                    <LogoutButton />
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>

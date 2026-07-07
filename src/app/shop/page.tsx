@@ -54,7 +54,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
                     <span className="mb-1.5 inline-block rounded-full bg-petrol-600/10 px-2 py-0.5 text-[9px] font-medium text-petrol-700 sm:px-2.5 sm:text-[10px]">{p.categoryTitle}</span>
                     <h3 className="line-clamp-2 text-xs font-bold leading-5 text-navy-900 group-hover:text-petrol-700 sm:text-sm sm:leading-6">{p.title}</h3>
                     <div className="mt-3 flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-navy-900 sm:text-xs">از {formatRial(p.minPrice, { withUnit: false })}</span>
+                      <span className="text-[10px] font-semibold text-navy-900 sm:text-xs">از {formatRial(p.minPrice || 0, { withUnit: false })}</span>
                       <span className="rounded-full bg-navy-900/5 px-2 py-0.5 text-[9px] text-charcoal-500 sm:text-[10px]">{p.variantCount} تنوع</span>
                     </div>
                   </div>

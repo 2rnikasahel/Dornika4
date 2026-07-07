@@ -65,11 +65,11 @@ export async function POST(req: Request) {
         productId: productVariants.productId,
       })
       .from(productVariants)) as Array<{
-      id: string;
+      id: number;
       sku: string | null;
       name: string;
       price: string;
-      productId: string;
+      productId: number;
     }>;
 
     const bySku = new Map<string, (typeof allVariants)[number]>();
@@ -134,9 +134,7 @@ export async function POST(req: Request) {
     }
 
     // Record the job.
-    const jobId = `apuj_${randomUUID().replace(/-/g, "")}`;
     await db.insert(aiPriceUpdateJobs).values({
-      id: jobId,
       filename: file.name,
       mode,
       totalRows: rows.length,

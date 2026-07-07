@@ -12,7 +12,7 @@ export function CheckoutForm({ user, subtotal, count }: { user: any; subtotal: n
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
     const body = { shippingAddress: formData.get("address"), paymentMethod: "sandbox", notes: formData.get("notes") };
     try {
       const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
