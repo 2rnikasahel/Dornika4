@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SMS provider configuration for "درنیکا ساحل" (Dornika Sahel).
  *

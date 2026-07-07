@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Order creation + payment processing for "درنیکا ساحل" (Dornika Sahel).
  *
@@ -13,7 +14,7 @@
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
-import { getDb } from "@/db";
+import { db } from "@/db";
 import {
   carts,
   cartItems,

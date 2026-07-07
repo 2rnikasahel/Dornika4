@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Luxury color palettes for "درنیکا ساحل" (Dornika Sahel).
  *

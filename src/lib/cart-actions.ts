@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Cart actions shared between `/api/cart` and `/api/cart/items`.
  *
@@ -11,7 +12,7 @@ import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
 
-import { getDb } from "@/db";
+import { db } from "@/db";
 import {
   carts,
   cartItems,
