@@ -252,7 +252,7 @@ CREATE TABLE IF NOT EXISTS products (
   status text NOT NULL DEFAULT 'draft',
   sort_order integer NOT NULL DEFAULT 0,
   meta_title text,
-  meta_desc text,
+  meta_description text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -328,7 +328,7 @@ CREATE TABLE IF NOT EXISTS landing_features (
   id text PRIMARY KEY,
   icon text NOT NULL,
   title text NOT NULL,
-  desc text,
+  description text,
   is_active boolean NOT NULL DEFAULT true,
   sort_order integer NOT NULL DEFAULT 0
 );

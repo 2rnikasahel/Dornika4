@@ -305,7 +305,7 @@ export const landingFeatures = pgTable(
     id: text("id").primaryKey(),
     icon: text("icon").notNull(),
     title: text("title").notNull(),
-    desc: text("desc"),
+    desc: text("description"),
     isActive: boolean("is_active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
   },
